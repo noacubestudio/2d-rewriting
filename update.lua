@@ -77,26 +77,39 @@ local palette = {
     {0, 0, 0},
     {0.6, 0.9, 0.8}
 }
+local basePalette = {
+    {0, 0, 0},
+    {1, 1, 1}
+}
 
 function updatePallette()
     -- randomize light color
     palette[2] = {love.math.random(200, 255)/255, love.math.random(200, 255)/255, love.math.random(200, 255)/255}
 end
 
-function updateImagedata(imageData, rows)
+function updateImagedata(imageData, rows, mode)
     local width = imageData:getWidth()
     local height = #rows
 
     for y=0, height-1 do
         local row = rows[y+1]
         for x=0, width-1 do
-            local color = palette[row[x+1]+1]
-            local randomFactor = 0.96 + love.math.random() * 0.04
-            imageData:setPixel(x, y, 
-                color[1] * randomFactor, 
-                color[2] * randomFactor, 
-                color[3] * randomFactor, 
-            1)
+            if mode ~= "print" then
+                local color = palette[row[x+1]+1]
+                local randomFactor = mode ~= "preview" and 0.96 + love.math.random() * 0.04 or 1
+                imageData:setPixel(x, y, 
+                    color[1] * randomFactor, 
+                    color[2] * randomFactor, 
+                    color[3] * randomFactor, 
+                1)
+            else
+                local color = basePalette[row[x+1]+1]
+                imageData:setPixel(x, y, 
+                    color[1], 
+                    color[2], 
+                    color[3], 
+                1)
+            end
         end
     end
 end

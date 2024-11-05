@@ -191,10 +191,76 @@ function love.keypressed(key, scancode, isrepeat)
         if found == false then return end
         loadRules("rules.png")
     end
+    -- save image
+    if key == "s" then
+        print("saving image")
+        updateImagedata(output.imageData, rewriteState, "print")
+
+        local fileData = output.imageData:encode("png", "output.png")
+        love.filesystem.write("output.png", fileData)
+        print("image saved as output.png in path: " .. love.filesystem.getSaveDirectory())
+
+        updateImagedata(output.imageData, rewriteState)
+    end
+end
+
+local startX, startY = 0, 0
+local brushColor = 0
+
+function love.mousepressed(x, y, button, istouch, presses)
+    brushColor = button == 1 and 0 or 1
+    if button == 1 or button == 2 then
+        gameState = "paused"
+        local x, y = mouseToCoordinate(x, y)
+        startX, startY = x, y
+        local previewState = deeperCopy(rewriteState)
+        previewState[y][x] = brushColor
+        updateImagedata(output.imageData, previewState, 'preview')
+        output.image:replacePixels(output.imageData)
+    end
+end
+
+function love.mousemoved(x, y, dx, dy, istouch)
+    if love.mouse.isDown(1) or love.mouse.isDown(2) then
+        local x, y = mouseToCoordinate(x, y)
+        local previewState = deeperCopy(rewriteState)
+        for i = math.min(startY, y), math.max(startY, y) do
+            for j = math.min(startX, x), math.max(startX, x) do
+                if i > 0 and j > 0 then previewState[i][j] = brushColor end
+            end
+        end
+        updateImagedata(output.imageData, previewState, 'preview')
+        output.image:replacePixels(output.imageData)
+    end
+end
+
+function love.mousereleased(x, y, button, istouch, presses)
+    if button == 1 or button == 2 then
+        local x, y = mouseToCoordinate(x, y)
+        --print(math.min(startY, y), math.max(startY, y), math.min(startX, x), math.max(startX, x))
+        for i = math.min(startY, y), math.max(startY, y) do
+            for j = math.min(startX, x), math.max(startX, x) do
+                if i > 0 and j > 0 then rewriteState[i][j] = brushColor end
+            end
+        end
+        gameState = "running"
+        print("running.")
+        updateImagedata(output.imageData, rewriteState)
+        output.image:replacePixels(output.imageData)
+    end
+    startX, startY = 0, 0
 end
 
 
 -- helper functions
+
+function mouseToCoordinate(x, y)
+    x, y = math.floor(x / output.zoomLevel) + 1, math.floor(y / output.zoomLevel) + 1
+    -- clamp to image size
+    x = math.max(1, math.min(x, output.imageData:getWidth()))
+    y = math.max(1, math.min(y, output.imageData:getHeight()))
+    return x, y
+end
 
 function shallowCopy(orig)
     local copy = {}
