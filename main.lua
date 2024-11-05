@@ -17,10 +17,17 @@ local rewriteRules = {}
 local rulesImageData = nil
 local rulesImageHash = 0
 
-local gameState = "running"
-local windowHasFocus = true
+local app = {
+    idle = true,
+    paused = false,
+    editing = false,
+    error = false,
+    viewingCode = false,
+    focused = true,
+    printing = false
+}
 
--- the program parses two images, source.png and rules.png.
+-- the app parses two images, source.png and rules.png.
 -- the output image is created from the source image and is updated by applying rules from the rules image.
 
 -- patterns are represented as 2d tables of 1 and 0 (-1 for wildcard)
@@ -37,7 +44,7 @@ end
 function loadState(filename)
     if love.filesystem.getInfo(filename) == nil then
         print(filename .. " not found")
-        gameState = "error"
+        app.error = true
         return false -- failed to load
     end
 
@@ -53,26 +60,17 @@ function loadState(filename)
     -- continue loading image data
     print("loading or reloading state from " .. filename)
     initialImageData = newImageData
-    output.imageData = initialImageData:clone() -- this one will be modified
 
-    -- output image and window. window size is based on the image size and zoom level
-    -- only reloads the window size if it has changed
-    setupWindow(output)
-    output.image = love.graphics.newImage(output.imageData)
-
-    -- parse initial state
-    rewriteState = parseState(output.imageData)
-
-    -- set image to represent the initial state
-    updateImagedata(output.imageData, rewriteState)
-    output.image:replacePixels(output.imageData)
+    -- display the state as the output image
+    setupWindow(initialImageData:getWidth(), initialImageData:getHeight(), output.zoomLevel)
+    setupOutput(output, initialImageData)
     return true
 end
 
 function loadRules(filename)
     if love.filesystem.getInfo(filename) == nil then
         print(filename .. " not found")
-        gameState = "error"
+        app.error = true
         return false -- failed to load
     end
 
@@ -94,40 +92,57 @@ function loadRules(filename)
     return true
 end
 
-function setupWindow(output)
-    --print("window size: " .. output.imageData:getWidth(), output.imageData:getHeight(), output.zoomLevel)
+function setupOutput(output, outputImageData)
+    -- output image and window. window size is based on the image size and zoom level
+    -- only reloads the window size if it has changed
+    output.imageData = outputImageData:clone()
+    output.image = love.graphics.newImage(output.imageData)
+    
+    if app.viewingCode == false then
+        -- parse initial state
+        rewriteState = parseState(output.imageData)
+        -- set image to represent the initial state
+        updateImagedata(output.imageData, rewriteState, app)
+        app.idle = false
+        for key, value in ipairs(app) do
+            print(key, value)
+        end
+    end
+
+    output.image:replacePixels(output.imageData)
+end
+
+function setupWindow(newWidth, newHeight, zoomLevel)
     love.graphics.setDefaultFilter('nearest', 'nearest')
     love.graphics.setBackgroundColor(0.5, 0.5, 0.5)
-    width, height, flags = love.window.getMode()
-    if width ~= output.imageData:getWidth() * output.zoomLevel or height ~= output.imageData:getHeight() * output.zoomLevel then
-        love.window.setMode(
-            output.imageData:getWidth() * output.zoomLevel, 
-            output.imageData:getHeight() * output.zoomLevel, 
-        {resizable=false})
+
+    local width, height, flags = love.window.getMode()
+    local sizeChanged = (width ~= newWidth * zoomLevel or height ~= newHeight * zoomLevel)
+    
+    if sizeChanged then
+        love.window.setMode(newWidth * zoomLevel, newHeight * zoomLevel, {resizable=false})
     end
 end
 
 function love.update(dt)
-    if love.window.hasFocus() == false then
-        windowHasFocus = false
-        if gameState == "running" then
-            gameState = "paused"
-            print("paused.")
-        end
+    if app.error or app.viewingCode or app.idle or app.paused then
+        -- do nothing
         return
+    elseif love.window.hasFocus() == false then
+        -- pause when window loses focus
+        app.focused = false
+        print("lost focus.") -- wip, does this actually pause
+        return
+    elseif not app.focused and love.window.hasFocus() then
+        -- resume when window regains focus
+        app.focused = true
+        print("regained focus.")   
+        loadState("source.png") -- if the file changed
+        loadRules("rules.png") -- if the file changed
+        -- wip, should the above return something so we can either return or not
     end
-    if gameState ~= "running" then
-        if love.window.hasFocus() == true and not windowHasFocus then
-            windowHasFocus = true
-            gameState = "running"
-            print("resuming.")
-            -- try reloading state and rules if the files have changed
-            loadState("source.png")
-            loadRules("rules.png")
-        else
-            return
-        end
-    end
+
+    -- if viewing state, update the state and image in some interval
 
     output.timeSinceLastUpdate = output.timeSinceLastUpdate + dt
     if output.timeSinceLastUpdate > output.updateInterval then
@@ -136,71 +151,95 @@ function love.update(dt)
         -- new state, apply rules once
         local madeChanges = updateState(rewriteState, rewriteRules)
         if not madeChanges then
-            gameState = "paused"
-            print("paused.")
+            app.idle = true
+            print("idle.")
             return
         end
         -- update image
-        updateImagedata(output.imageData, rewriteState)
+        updateImagedata(output.imageData, rewriteState, app)
         output.image:replacePixels(output.imageData)
     end
 end
 
 function love.draw()
-    if gameState == "error" then
+    if app.error then
         return
     end
     -- draw output image using the scale. matches window size.
     love.graphics.scale(output.zoomLevel, output.zoomLevel)
     love.graphics.draw(output.image, 0, 0)
     love.graphics.reset()
-    love.graphics.setColor(1, 0, 0)
-    love.graphics.print("FPS: "..tostring(love.timer.getFPS( )), 0, 0)
+    
+    local fps = love.timer.getFPS()
+    if fps < 30 then
+        love.graphics.setColor(1, 0, 0)
+        love.graphics.print("FPS: "..tostring(love.timer.getFPS( )), 0, 0)
+    end
     love.graphics.setColor(1, 1, 1)
 end
 
-function love.keypressed(key, scancode, isrepeat)
-    print("key pressed: " .. key)
-    -- pause
-    if key == "space" then
-        if gameState == "running" then
-            gameState = "paused"
-            print("paused.")
-        else
-            gameState = "running"
-            print("running.")
-        end
-    end
-    -- reset
-    if key == "r" then
-        print("resetting to initial state")
-        output.imageData = initialImageData:clone()
-        rewriteState = parseState(output.imageData)
-        -- first update
-        gameState = "running"
-        print("running.")
-        updatePallette()
-        updateImagedata(output.imageData, rewriteState)
+function love.keypressed(key, scancode, isrepeat) 
+    if key == "space" and not app.viewingCode then
+        -- pause
+        app.paused = not app.paused
+        print(app.paused and "paused." or "unpaused.")
+
+       
+        -- output one more time, to show if paused or not
+        updateImagedata(output.imageData, rewriteState, app)
         output.image:replacePixels(output.imageData)
-    end
-    -- reload state and rules
-    if key == "l" then
-        gameState = "running"
-        print("running.")
-        local found = loadState("source.png")
-        if found == false then return end
-        loadRules("rules.png")
-    end
-    -- save image
-    if key == "s" then
+
+    elseif key == "r" and not app.viewingCode then
+        -- reset
+        print("resetting state.")
+        updatePallette()
+        setupWindow(initialImageData:getWidth(), initialImageData:getHeight(), output.zoomLevel)
+        setupOutput(output, initialImageData) 
+    
+    elseif key == "l" then
+        -- reload state and rules
+        local stateChanged = loadState("source.png")
+        local rulesChanged = loadRules("rules.png")
+        if stateChanged then
+            print("loaded new state.")
+        end
+        if rulesChanged then
+            print("loaded new rules.")
+        end
+    
+    elseif key == "s" then
+        -- save image
+        if app.viewingCode then
+            print("cannot save image while viewing code.")
+            return
+        end
         print("saving image")
-        updateImagedata(output.imageData, rewriteState, "print")
+
+        app.printing = true
+        updateImagedata(output.imageData, rewriteState, app)
 
         local fileData = output.imageData:encode("png", "output.png")
         love.filesystem.write("output.png", fileData)
         print("image saved as output.png in path: " .. love.filesystem.getSaveDirectory())
 
-        updateImagedata(output.imageData, rewriteState)
+        app.printing = false
+        updateImagedata(output.imageData, rewriteState, app)
+    
+    elseif key == "tab" then
+        -- switch between rule and state display
+        if app.viewingCode then
+            app.viewingCode = false
+            print("viewing state.")
+            setupWindow(initialImageData:getWidth(), initialImageData:getHeight(), output.zoomLevel)
+            setupOutput(output, initialImageData)
+        else
+            app.viewingCode = true
+            print("viewing code.")
+            setupWindow(rulesImageData:getWidth(), rulesImageData:getHeight(), output.zoomLevel)
+            setupOutput(output, rulesImageData)
+        end
+    else
+        print("key pressed: " .. key)
     end
 end
 
@@ -210,45 +249,47 @@ local brushColor = 0
 function love.mousepressed(x, y, button, istouch, presses)
     brushColor = button == 1 and 0 or 1
     if button == 1 or button == 2 then
-        gameState = "paused"
+        app.editing = true
         local x, y = mouseToCoordinate(x, y)
         startX, startY = x, y
+
         local previewState = deeperCopy(rewriteState)
-        previewState[y][x] = brushColor
-        updateImagedata(output.imageData, previewState, 'preview')
-        output.image:replacePixels(output.imageData)
+        updateStateFromMouseInput(previewState, startX, x, startY, y, brushColor)
     end
 end
 
 function love.mousemoved(x, y, dx, dy, istouch)
     if love.mouse.isDown(1) or love.mouse.isDown(2) then
         local x, y = mouseToCoordinate(x, y)
+
         local previewState = deeperCopy(rewriteState)
-        for i = math.min(startY, y), math.max(startY, y) do
-            for j = math.min(startX, x), math.max(startX, x) do
-                if i > 0 and j > 0 then previewState[i][j] = brushColor end
-            end
-        end
-        updateImagedata(output.imageData, previewState, 'preview')
-        output.image:replacePixels(output.imageData)
+        updateStateFromMouseInput(previewState, startX, x, startY, y, brushColor)
     end
 end
 
 function love.mousereleased(x, y, button, istouch, presses)
     if button == 1 or button == 2 then
+        app.editing = false
+        app.idle = false
         local x, y = mouseToCoordinate(x, y)
-        --print(math.min(startY, y), math.max(startY, y), math.min(startX, x), math.max(startX, x))
-        for i = math.min(startY, y), math.max(startY, y) do
-            for j = math.min(startX, x), math.max(startX, x) do
-                if i > 0 and j > 0 then rewriteState[i][j] = brushColor end
-            end
-        end
-        gameState = "running"
-        print("running.")
-        updateImagedata(output.imageData, rewriteState)
-        output.image:replacePixels(output.imageData)
+
+        updateStateFromMouseInput(rewriteState, startX, x, startY, y, brushColor)
     end
     startX, startY = 0, 0
+end
+
+function updateStateFromMouseInput(state, startX, endX, startY, endY, brushColor)
+    if startX == x and startY == y then 
+        state[y][x] = brushColor
+    else 
+        for i = math.min(startY, endY), math.max(startY, endY) do
+            for j = math.min(startX, endX), math.max(startX, endX) do
+                if i > 0 and j > 0 then state[i][j] = brushColor end
+            end
+        end
+    end
+    updateImagedata(output.imageData, state, app)
+    output.image:replacePixels(output.imageData)
 end
 
 
