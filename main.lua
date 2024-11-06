@@ -120,7 +120,7 @@ function setupWindow(newWidth, newHeight, zoomLevel)
     local sizeChanged = (width ~= newWidth * zoomLevel or height ~= newHeight * zoomLevel)
     
     if sizeChanged then
-        love.window.setMode(newWidth * zoomLevel, newHeight * zoomLevel, {resizable=false})
+        love.window.setMode(newWidth * zoomLevel, newHeight * zoomLevel, {resizable=false, borderless=true})
     end
 end
 
@@ -153,7 +153,7 @@ function love.update(dt)
         if not madeChanges then
             app.idle = true
             print("idle.")
-            return
+            -- no return here, so the image is still updated once more
         end
         -- update image
         updateImagedata(output.imageData, rewriteState, app)
@@ -179,11 +179,12 @@ function love.draw()
 end
 
 function love.keypressed(key, scancode, isrepeat) 
-    if key == "space" and not app.viewingCode then
+    if key == "escape" then
+        love.event.quit()
+    elseif key == "space" and not app.viewingCode then
         -- pause
         app.paused = not app.paused
         print(app.paused and "paused." or "unpaused.")
-
        
         -- output one more time, to show if paused or not
         updateImagedata(output.imageData, rewriteState, app)
@@ -238,6 +239,20 @@ function love.keypressed(key, scancode, isrepeat)
             setupWindow(rulesImageData:getWidth(), rulesImageData:getHeight(), output.zoomLevel)
             setupOutput(output, rulesImageData)
         end
+    elseif key == "up" or key == "down" or key == "left" or key == "right" then
+
+        -- rotate all patterns in the rules in a local copy
+        -- amount to rotate depends on the key pressed
+        local rotateCountPerDirection = {up = 3, down = 1, left = 2, right = 0}
+        local rotateCount = rotateCountPerDirection[key]
+        local rotatedRules = getRotatedRules(rotateCount, rewriteRules)
+        print("rotating rules " .. key .. " and running once.")
+        
+        -- update and output just once
+        app.idle = true
+        updateState(rewriteState, rotatedRules)
+        updateImagedata(output.imageData, rewriteState, app)
+        output.image:replacePixels(output.imageData)
     else
         print("key pressed: " .. key)
     end

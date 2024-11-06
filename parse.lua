@@ -42,6 +42,34 @@ end
 --   { {1, 1, 1}, {1, 1, 1}, {1, 1, 1} },   -- after, option 1 ... etc
 -- }
 
+function getRotatedRules(rotateCount, originalRules)
+    local rotatedRules = {}
+    if rotateCount == 0 then
+        return originalRules -- note that this is a shallow copy
+    end
+    for i, rule in ipairs(originalRules) do
+        rotatedRules[i] = rotateAllPatterns(rule)
+        for _ = 1, rotateCount - 1 do
+            rotatedRules[i] = rotateAllPatterns(rotatedRules[i]) -- do repeatedly
+        end
+    end
+    return rotatedRules
+end
+
+function rotateAllPatterns(rule)
+    local newRule = {}
+    local symmetrical = true
+    for i, pattern in ipairs(rule) do
+        newRule[i] = rotatePattern(pattern)
+        if newRule[i] == nil then
+            newRule[i] = pattern -- reset
+        else
+            symmetrical = false
+        end
+    end
+    return newRule
+end
+
 function parseRules(imageData)
     
     local function parseColor(r, g, b)
@@ -54,15 +82,6 @@ function parseRules(imageData)
         else
             return nil
         end
-    end
-
-    local function rotateAllPatterns(rule)
-        local newRule = {}
-        for i, pattern in ipairs(rule) do
-            newRule[i] = rotatePattern(pattern)
-            if newRule[i] == nil then return nil end
-        end
-        return newRule
     end
 
     local height = imageData:getHeight()
@@ -114,7 +133,7 @@ function parseRules(imageData)
             if not lastRowEmpty then
                 rotations = { currentRulePatterns }
                 for i = 1, 3 do
-                    -- add 3 more rotations unless it's symmetrical
+                    -- add 3 more rotations unless it's entirely symmetrical
                     local result = rotateAllPatterns(rotations[#rotations])
                     if result then table.insert(rotations, rotateAllPatterns(rotations[#rotations])) end
                 end

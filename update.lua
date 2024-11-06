@@ -73,7 +73,7 @@ end
 -- visual-only effects can be applied here
 
 local palette = { 
-    -- wip: once reading back and saving the image is added, the palette needs to be saved alongside the image or disabled first?
+    -- replaced with basePalette while saving screenshots
     {0, 0, 0},
     {0.6, 0.9, 0.8}
 }
@@ -107,7 +107,7 @@ function updateImagedata(imageData, state, app)
                 1)
             else
                 local color = palette[row[x+1]+1]
-                local randomFactor = not (app.editing or app.paused) and 0.95 + love.math.random() * 0.05 or 1
+                local randomFactor = not (app.editing or app.paused or app.idle) and 0.95 + love.math.random() * 0.05 or 1
                 imageData:setPixel(x, y, 
                     color[1] * randomFactor, 
                     color[2] * randomFactor, 
