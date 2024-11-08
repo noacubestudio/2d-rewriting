@@ -1,9 +1,9 @@
--- update state and image data
+-- update grid and image data
 
-local recentHeatmap = {}
-local heatmap = {}
+local heatmapPerCycle = {}
+local heatmapPerInput = {}
 
-function updateState(originalState, rules, app)
+function applyRulesToGrid(gridBeforeTurn, rules)
     
     function findFirstSubPattern(large_pattern, sub_pattern, startX, startY)
         local large_rows = #large_pattern
@@ -41,10 +41,10 @@ function updateState(originalState, rules, app)
                 if sub_pattern[si][sj] > -1 then
                     large_pattern[i + si - 1][j + sj - 1] = sub_pattern[si][sj]
                 end
-                -- indicate that the rule was applied here on the heatmap.
+                -- indicate that the rule was applied here on the heatmapPerInput.
                 -- set binary digit to 1 that corrensponds to index, so we can see which rules were applied where. other digits stay.
-                heatmap[i + si - 1][j + sj - 1] = bit.bor(heatmap[i + si - 1][j + sj - 1], bit.lshift(1, ruleIndex))
-                recentHeatmap[i + si - 1][j + sj - 1] = bit.bor(recentHeatmap[i + si - 1][j + sj - 1], bit.lshift(1, ruleIndex))
+                heatmapPerInput[i + si - 1][j + sj - 1] = bit.bor(heatmapPerInput[i + si - 1][j + sj - 1], bit.lshift(1, ruleIndex))
+                heatmapPerCycle[i + si - 1][j + sj - 1] = bit.bor(heatmapPerCycle[i + si - 1][j + sj - 1], bit.lshift(1, ruleIndex))
             end
         end
     end
@@ -60,19 +60,19 @@ function updateState(originalState, rules, app)
         return startX, startY
     end
 
-    function turnOffAllHeat(index, heatmap)
-        for i = 1, #heatmap do
-            for j = 1, #heatmap[1] do
-                local binary = heatmap[i][j]
-                heatmap[i][j] = bit.band(binary, bit.bnot(bit.lshift(1, index)))
+    function turnOffAllHeat(index, heatmapPerInput)
+        for i = 1, #heatmapPerInput do
+            for j = 1, #heatmapPerInput[1] do
+                local binary = heatmapPerInput[i][j]
+                heatmapPerInput[i][j] = bit.band(binary, bit.bnot(bit.lshift(1, index)))
             end
         end
     end
 
-    function findFirstOne(heatmap)
-        for i = 1, #heatmap do
-            for j = 1, #heatmap[1] do
-                if heatmap[i][j] > 0 then
+    function findFirstOne(heatmapPerInput)
+        for i = 1, #heatmapPerInput do
+            for j = 1, #heatmapPerInput[1] do
+                if heatmapPerInput[i][j] > 0 then
                     return i, j
                 end
             end
@@ -80,9 +80,9 @@ function updateState(originalState, rules, app)
         return nil, nil
     end
 
-    function findFirstChangedCell (heatmap, leftSpread, upSpread)
+    function findFirstChangedCell (heatmapPerInput, leftSpread, upSpread)
         -- changes start from the first cell that has heat.
-        local firstChangedX, firstChangedY = findFirstOne(deeperCopy(heatmap))
+        local firstChangedX, firstChangedY = findFirstOne(deeperCopy(heatmapPerInput))
         if firstChangedX then
             -- add padding
             x, y = newStartCoordinate(firstChangedX, firstChangedY, leftSpread, upSpread)
@@ -101,20 +101,20 @@ function updateState(originalState, rules, app)
 
 
     local madeChange = false
-    local state = shallowCopy(originalState) -- copy the before state to modify it
+    local grid = shallowCopy(gridBeforeTurn) -- copy the before grid to modify it
 
     -- initialize heatmaps. one is for the whole time, the other is for the last loop.
     -- the former is a nice visual representation of which rules were applied where.
     -- the latter is used to skip checking positions that didn't change since the last loop.
-    if app.loopCount == 0 then
-        heatmap = {}
-        recentHeatmap = {}
-        for i = 1, #state do
-            heatmap[i] = {}
-            recentHeatmap[i] = {}
-            for j = 1, #state[1] do
-                heatmap[i][j] = 0
-                recentHeatmap[i][j] = 0
+    if app.loopsSinceInput == 0 then
+        heatmapPerInput = {}
+        heatmapPerCycle = {}
+        for i = 1, #grid do
+            heatmapPerInput[i] = {}
+            heatmapPerCycle[i] = {}
+            for j = 1, #grid[1] do
+                heatmapPerInput[i][j] = 0
+                heatmapPerCycle[i][j] = 0
             end
         end
         print("   loop start. rewrites per turn:")
@@ -130,33 +130,33 @@ function updateState(originalState, rules, app)
             -- io.write("<> " .. string.format("%02d", i) .. ": ")
 
             local minChangingX, minChangingY = 1, 1
-            if app.loopCount > 0 then
+            if app.loopsSinceInput > 0 then
                 -- in later loops, we can skip a bunch of looping by checking if there is some heat in the cell.
                 -- if there isn't, then no rule applied since last time.
                 -- for this to work, we need to turn off the heat for the rule we are about to apply.
-                turnOffAllHeat(i, recentHeatmap)
-                minChangingX, minChangingY = findFirstChangedCell(recentHeatmap, patternWidth, patternHeight) or 1, 1
+                turnOffAllHeat(i, heatmapPerCycle)
+                minChangingX, minChangingY = findFirstChangedCell(heatmapPerCycle, patternWidth, patternHeight) or 1, 1
             end
 
-            -- apply the rule to the state
+            -- apply the rule to the grid
             -- find the first matching pattern and replace it with a random choice from the rule
             -- repeat until no more matches are found.
             local ruleMisses = 0
             local ruleHits = 0
-            local x, y, misses = findFirstSubPattern(state, beforePattern, minChangingX, minChangingY)
+            local x, y, misses = findFirstSubPattern(grid, beforePattern, minChangingX, minChangingY)
             ruleMisses = ruleMisses + (misses or 0)
             while x and y do
                 ruleHits = ruleHits + 1
                 local choice = math.random(2, #rule)
                 
-                replaceSubPattern(state, rule[choice], x, y, i)
+                replaceSubPattern(grid, rule[choice], x, y, i)
 
                 -- start from the next cell that isn't definitely unchanged/ wasn't matchning so far, rather than back from the top.
                 local startX, startY = newStartCoordinate(x, y, patternWidth, patternHeight)
                 startX, startY = maxPointInReadingOrder(startX, startY, minChangingX, minChangingY)
 
                 -- look again for the next match from the new start onwards.
-                x, y, misses = findFirstSubPattern(state, beforePattern, startX, startY)
+                x, y, misses = findFirstSubPattern(grid, beforePattern, startX, startY)
                 ruleMisses = ruleMisses + (misses or 0)
             end
             -- print(ruleHits .. " of " .. ruleHits + ruleMisses .. ".")
@@ -165,13 +165,13 @@ function updateState(originalState, rules, app)
         end
     end
 
-    -- replace the original state with the modified one
+    -- replace the original grid with the modified one
     --print("<> " .. totalHits .. " of " .. totalHits + totalMisses .. ".")
     io.write(totalHits .." ")
     --print()
     if totalHits > 0 then
-        for i = 1, #state do
-            originalState[i] = state[i]
+        for i = 1, #grid do
+            gridBeforeTurn[i] = grid[i]
         end
         return true, totalHits, totalMisses
     end
@@ -180,7 +180,7 @@ function updateState(originalState, rules, app)
     return false, totalHits, totalMisses
 end
 
--- use the state table to update the image data
+-- use the grid table to update the image data
 -- visual-only effects can be applied here
 
 local palette = { 
@@ -198,7 +198,7 @@ function updatePallette()
     palette[2] = {love.math.random(200, 255)/255, love.math.random(200, 255)/255, love.math.random(200, 255)/255}
 end
 
-function updateImagedata(imageData, state, app)
+function updateImagedata(imageData, grid)
     if app.viewingCode then
         -- TODO WIP, turn the rules data back into an image? would allow for some interesting visualizations.
         -- However it seems important to keep the color etc. as they were.
@@ -206,14 +206,14 @@ function updateImagedata(imageData, state, app)
         return
     end
     local width = imageData:getWidth()
-    local height = #state
+    local height = #grid
 
     for y=0, height-1 do
-        local row = state[y+1]
+        local row = grid[y+1]
         for x=0, width-1 do
-            if #heatmap > 0 and app.activeHeatmapRule > 0 then
-                local heatmapBinary = heatmap[y+1][x+1]
-                local digit = bit.band(bit.rshift(heatmapBinary, app.activeHeatmapRule), 1)
+            if #heatmapPerInput > 0 and app.viewingHeatmapForRule > 0 then
+                local heatmapBinary = heatmapPerInput[y+1][x+1]
+                local digit = bit.band(bit.rshift(heatmapBinary, app.viewingHeatmapForRule), 1)
                 imageData:setPixel(x, y, digit, row[x+1], row[x+1], 1)
             elseif app.printing then
                 local color = basePalette[row[x+1]+1]

@@ -1,190 +1,98 @@
-require "update"
+require "setup"
 require "parse"
+require "update"
 
-local output = {
-    updateInterval = 0.05,
-    zoomLevel = 8,
-    timeSinceLastUpdate = 0,
-    image = nil,
-    imageData = nil,
-}
-
-local rewriteState = {}
-local initialImageData = nil
-local initialImageHash = 0
-
-local rewriteRules = {}
-local rulesImageData = nil
-local rulesImageHash = 0
-
-local app = {
+app = {
+    -- state
     idle = true,
     paused = false,
     editing = false,
     error = false,
     viewingCode = false,
+    viewingHeatmapForRule = 0, 
     focused = true,
     printing = false,
-    loopCount = 0, -- gets reset when rules or state are changed manually
-    activeHeatmapRule = 0, 
+
+    -- reset on input
+    loopsSinceInput = 0,
+    hitsSinceInput = 0,
+    missesSinceInput = 0,
+
+    -- update loop
+    timeSinceLastUpdate = 0,
+    updateInterval = 0.05,
+
+    -- settings
+    zoomLevel = 4,
 }
 
--- the app parses two images, source.png and rules.png.
--- the output image is created from the source image and is updated by applying rules from the rules image.
+local mouseInput = {
+    startX = 0,
+    startY = 0,
+    brushColor = 0,
+}
 
--- patterns are represented as 2d tables of 1 and 0 (-1 for wildcard)
--- the state table is updated by applying rewrite rules from the rules table
--- each rule contains a before pattern and one or more after patterns
+local data = {
+    outputImage = nil,
+    outputImagedata = nil,
+    sourceImagedata = nil,
+    rulesImagedata = nil,
+
+    sourceImageHash = 0,
+    rulesImageHash = 0,
+
+    rules = {},
+    grid = {},
+}
 
 function love.load() 
-    local found = loadState("source.png")
-    if found == false then return end
-    loadRules("rules.png")
+    loadState(data, "source.png")
+    loadRules(data, "rules.png")
 end
-
-function loadState(filename)
-    if love.filesystem.getInfo(filename) == nil then
-        print(filename .. " not found")
-        app.error = true
-        return false -- failed to load
-    end
-
-    -- load and first check if the image has changed
-    local newImageData = love.image.newImageData(filename)
-    local newHash = imageHash(newImageData)
-    if newHash == initialImageHash then
-        print("no change in " .. filename)
-        return nil -- no change
-    end
-    initialImageHash = newHash
-
-    -- continue loading image data
-    print("found new " .. filename)
-    initialImageData = newImageData
-
-    -- display the state as the output image
-    setupWindow(initialImageData:getWidth(), initialImageData:getHeight(), output.zoomLevel)
-    setupOutput(output, initialImageData)
-    return true
-end
-
-function loadRules(filename)
-    if love.filesystem.getInfo(filename) == nil then
-        print(filename .. " not found")
-        app.error = true
-        return false -- failed to load
-    end
-
-    -- load and first check if the image has changed
-    local newImageData = love.image.newImageData(filename)
-    local newHash = imageHash(newImageData)
-    if newHash == rulesImageHash then
-        print("no change in " .. filename)
-        return nil -- no change
-    end
-    rulesImageHash = newHash
-
-    -- continue loading image data
-    print("found new " .. filename)
-    rulesImageData = newImageData
-
-    -- parse rules
-    rewriteRules = parseRules(rulesImageData)
-    if app.loopCount > 0 then
-        app.loopCount = 0
-        print("restarted loop and heatmap.")
-    end
-    return true
-end
-
-function setupOutput(output, outputImageData)
-    -- output image and window. window size is based on the image size and zoom level
-    -- only reloads the window size if it has changed
-    output.imageData = outputImageData:clone()
-    output.image = love.graphics.newImage(output.imageData)
-    
-    if app.viewingCode == false then
-        -- parse initial state
-        rewriteState = parseState(output.imageData)
-        if app.loopCount > 0 then
-            app.loopCount = 0
-            print("restarted loop and heatmap.")
-        end
-        -- set image to represent the initial state
-        updateImagedata(output.imageData, rewriteState, app)
-        app.idle = false
-        for key, value in ipairs(app) do
-            print(key, value)
-        end
-    end
-
-    output.image:replacePixels(output.imageData)
-end
-
-function setupWindow(newWidth, newHeight, zoomLevel)
-    love.graphics.setDefaultFilter('nearest', 'nearest')
-    love.graphics.setBackgroundColor(0.5, 0.5, 0.5)
-
-    local width, height, flags = love.window.getMode()
-    local sizeChanged = (width ~= newWidth * zoomLevel or height ~= newHeight * zoomLevel)
-    
-    if sizeChanged then
-        love.window.setMode(newWidth * zoomLevel, newHeight * zoomLevel, {resizable=false, borderless=true})
-    end
-end
-
-local hitsUntilIdle, missesUntilIdle = 0, 0
 
 function love.update(dt)
     if not app.focused and love.window.hasFocus() then
         -- resume when window regains focus
         app.focused = true
         print("regained focus.")   
-        -- reload state and rules
-        local stateChanged = loadState("source.png")
-        local rulesChanged = loadRules("rules.png")
-        if stateChanged then
-            print("loaded new state.")
-        end
-        if rulesChanged then
-            print("loaded new rules.")
-        end
-    end
-    if love.window.hasFocus() == false and app.focused then
-        -- pause when window loses focus
+        loadState(data, "source.png")
+        loadRules(data, "rules.png")
+
+    elseif app.focused and not love.window.hasFocus() then
         app.focused = false
         print("lost focus.")         
         return
     end
+
     if app.error or app.viewingCode or app.idle or app.paused then
-        -- do nothing
         return
     end
 
-    -- if viewing state, update the state and image in some interval
+    -- state is shown and unpaused and not idle (more potential changes to be made)
+    -- update every <updateInterval> seconds
 
-    output.timeSinceLastUpdate = output.timeSinceLastUpdate + dt
-    if output.timeSinceLastUpdate > output.updateInterval then
-        output.timeSinceLastUpdate = output.timeSinceLastUpdate - output.updateInterval
+    app.timeSinceLastUpdate = app.timeSinceLastUpdate + dt
+    if app.timeSinceLastUpdate > app.updateInterval then
+        app.timeSinceLastUpdate = app.timeSinceLastUpdate - app.updateInterval
 
         -- new state, apply rules once
-        local madeChanges, hits, misses = updateState(rewriteState, rewriteRules, app)
-        app.loopCount = app.loopCount + 1
-        hitsUntilIdle = hitsUntilIdle + hits
-        missesUntilIdle = missesUntilIdle + misses
-        -- print("turn " .. app.loopCount .. ".")
+        local madeChanges, hits, misses = applyRulesToGrid(data.grid, data.rules)
+        app.loopsSinceInput = app.loopsSinceInput + 1
+        app.hitsSinceInput = app.hitsSinceInput + hits
+        app.missesSinceInput = app.missesSinceInput + misses
+        -- print("turn " .. app.loopsSinceInput .. ".")
         if not madeChanges then
             app.idle = true
             print("   idle.")
-            print("   total " .. hitsUntilIdle .. "/" .. missesUntilIdle + hitsUntilIdle .. " matches during " .. app.loopCount .. " turns.")
-            print("   hit rate is " ..  string.format("%.3f", (hitsUntilIdle / (missesUntilIdle + hitsUntilIdle)) * 100)  .. "%.")
-            hitsUntilIdle, missesUntilIdle = 0, 0
+            print("   total " .. app.hitsSinceInput .. "/" .. app.missesSinceInput + app.hitsSinceInput .. " matches during " .. app.loopsSinceInput .. " turns.")
+            print("   hit rate is " ..  string.format("%.3f", (app.hitsSinceInput / (app.missesSinceInput + app.hitsSinceInput)) * 100)  .. "%.")
+            app.hitsSinceInput, app.missesSinceInput = 0, 0
             print()
             -- no return here, so the image is still updated once more
         end
         -- update image
-        updateImagedata(output.imageData, rewriteState, app)
-        output.image:replacePixels(output.imageData)
+        updateImagedata(data.outputImagedata, data.grid)
+        data.outputImage:replacePixels(data.outputImagedata)
     end
 end
 
@@ -193,8 +101,8 @@ function love.draw()
         return
     end
     -- draw output image using the scale. matches window size.
-    love.graphics.scale(output.zoomLevel, output.zoomLevel)
-    love.graphics.draw(output.image, 0, 0)
+    love.graphics.scale(app.zoomLevel, app.zoomLevel)
+    love.graphics.draw(data.outputImage, 0, 0)
     love.graphics.reset()
     
     local fps = love.timer.getFPS()
@@ -205,35 +113,33 @@ function love.draw()
     love.graphics.setColor(1, 1, 1)
 end
 
+-- input handling
+
 function love.keypressed(key, scancode, isrepeat) 
     if key == "escape" then
+        -- quit
         love.event.quit()
+
     elseif key == "space" and not app.viewingCode then
         -- pause
         app.paused = not app.paused
         print(app.paused and "paused." or "unpaused.")
        
         -- output one more time, to show if paused or not
-        updateImagedata(output.imageData, rewriteState, app)
-        output.image:replacePixels(output.imageData)
+        updateImagedata(data.outputImagedata, data.grid)
+        data.outputImage:replacePixels(data.outputImagedata)
 
     elseif key == "r" and not app.viewingCode then
         -- reset
         print("resetting state.")
         updatePallette()
-        setupWindow(initialImageData:getWidth(), initialImageData:getHeight(), output.zoomLevel)
-        setupOutput(output, initialImageData) 
+        setupWindow(data.sourceImagedata:getWidth(), data.sourceImagedata:getHeight(), app.zoomLevel)
+        setupOutput(data) 
     
     elseif key == "l" then
         -- reload state and rules
-        local stateChanged = loadState("source.png")
-        local rulesChanged = loadRules("rules.png")
-        if stateChanged then
-            print("loaded new state.")
-        end
-        if rulesChanged then
-            print("loaded new rules.")
-        end
+        loadState(data, "source.png")
+        loadRules(data, "rules.png")
     
     elseif key == "s" then
         -- save image
@@ -244,81 +150,79 @@ function love.keypressed(key, scancode, isrepeat)
         print("saving image")
 
         app.printing = true
-        updateImagedata(output.imageData, rewriteState, app)
+        updateImagedata(data.outputImagedata, data.grid)
 
-        local fileData = output.imageData:encode("png", "output.png")
+        local fileData = data.outputImagedata:encode("png", "output.png")
         love.filesystem.write("output.png", fileData)
         print("image saved as output.png in path: " .. love.filesystem.getSaveDirectory())
 
         app.printing = false
-        updateImagedata(output.imageData, rewriteState, app)
+        updateImagedata(data.outputImagedata, data.grid)
     
     elseif key == "tab" then
         -- switch between rule and state display
         if app.viewingCode then
             app.viewingCode = false
             print("viewing state.")
-            setupWindow(initialImageData:getWidth(), initialImageData:getHeight(), output.zoomLevel)
-            setupOutput(output, initialImageData)
+            setupWindow(data.sourceImagedata:getWidth(), data.sourceImagedata:getHeight(), app.zoomLevel)
+            setupOutput(data)
         else
             app.viewingCode = true
             print("viewing code.")
-            setupWindow(rulesImageData:getWidth(), rulesImageData:getHeight(), output.zoomLevel)
-            setupOutput(output, rulesImageData)
+            setupWindow(data.rulesImagedata:getWidth(), data.rulesImagedata:getHeight(), app.zoomLevel)
+            setupOutput(data)
         end
-    elseif key == "up" or key == "down" or key == "left" or key == "right" then
 
+    elseif key == "up" or key == "down" or key == "left" or key == "right" then
+        -- input keys for games, etc.
         -- rotate all patterns in the rules in a local copy
         -- amount to rotate depends on the key pressed
         local rotateCountPerDirection = {up = 3, down = 1, left = 2, right = 0}
         local rotateCount = rotateCountPerDirection[key]
-        local rotatedRules = getRotatedRules(rotateCount, rewriteRules)
+        local rotatedRules = getRotatedRules(rotateCount, data.rules)
         print("input " .. key)
         
         -- update and output. on the first turn, pass 
         app.idle = false
         app.playerInput = true
-        if app.loopCount > 0 then
-            app.loopCount = 0
+        if app.loopsSinceInput > 0 then
+            app.loopsSinceInput = 0
             --print("restarted loop and heatmap.")
         end
         timeSinceLastUpdate = 0
-        updateState(rewriteState, rotatedRules, app)
-        updateImagedata(output.imageData, rewriteState, app)
-        output.image:replacePixels(output.imageData)
+        applyRulesToGrid(data.grid, rotatedRules)
+        updateImagedata(data.outputImagedata, data.grid)
+        data.outputImage:replacePixels(data.outputImagedata)
         app.playerInput = false
 
     elseif key == "1" or key == "2" then
-        -- increment or decrement the active heatmap rule index
-        app.activeHeatmapRule = app.activeHeatmapRule + (key == "1" and -1 or 1)
-        if app.activeHeatmapRule <= 0 then
-            app.activeHeatmapRule = 0
+        -- show different heatmaps over the state that represent where each rule matched since last input
+        app.viewingHeatmapForRule = app.viewingHeatmapForRule + (key == "1" and -1 or 1)
+        if app.viewingHeatmapForRule <= 0 then
+            app.viewingHeatmapForRule = 0
             print("viewing state without heatmap.")
         else
-            print("viewing heatmap for rule: " .. app.activeHeatmapRule)
+            print("viewing heatmap for rule: " .. app.viewingHeatmapForRule)
         end
-        updateImagedata(output.imageData, rewriteState, app)
-        output.image:replacePixels(output.imageData)
+        updateImagedata(data.outputImagedata, data.grid)
+        data.outputImage:replacePixels(data.outputImagedata)
     else
         --print("key pressed: " .. key)
     end
 end
 
-local startX, startY = 0, 0
-local brushColor = 0
-
 function love.mousepressed(x, y, button, istouch, presses)
-    brushColor = button == 1 and 0 or 1
+    mouseInput.brushColor = button == 1 and 0 or 1
     if button == 1 or button == 2 then
         app.editing = true
         local x, y = mouseToCoordinate(x, y)
-        startX, startY = x, y
+        mouseInput.startX, mouseInput.startY = x, y
 
         if app.viewingCode then
             return
         end
-        local previewState = deeperCopy(rewriteState)
-        updateStateFromMouseInput(previewState, startX, x, startY, y, brushColor)
+        local previewState = deeperCopy(data.grid)
+        drawInGrid(previewState, x, y, mouseInput)
     end
 end
 
@@ -329,8 +233,16 @@ function love.mousemoved(x, y, dx, dy, istouch)
         if app.viewingCode then
             return
         end
-        local previewState = deeperCopy(rewriteState)
-        updateStateFromMouseInput(previewState, startX, x, startY, y, brushColor)
+        local previewState = deeperCopy(data.grid)
+        drawInGrid(previewState, x, y, mouseInput)
+    end
+
+    -- middle mouse to move window
+    if love.mouse.isDown(3) then
+        local previousWindowX, previousWindowY = love.window.getPosition()
+        local width, height = love.graphics.getDimensions( )
+        local dx, dy = love.mouse.getPosition() - width / 2, love.mouse.getY() - height / 2
+        love.window.setPosition(previousWindowX + dx, previousWindowY + dy)
     end
 end
 
@@ -343,39 +255,39 @@ function love.mousereleased(x, y, button, istouch, presses)
         if app.viewingCode then
             return
         end
-        updateStateFromMouseInput(rewriteState, startX, x, startY, y, brushColor)
+        drawInGrid(data.grid, x, y, mouseInput)
     end
-    startX, startY = 0, 0
+    mouseInput.startX, mouseInput.startY = 0, 0
 end
 
-function updateStateFromMouseInput(state, startX, endX, startY, endY, brushColor)
+function mouseToCoordinate(x, y)
+    x, y = math.floor(x / app.zoomLevel) + 1, math.floor(y / app.zoomLevel) + 1
+    -- clamp to image size
+    x = math.max(1, math.min(x, data.outputImagedata:getWidth()))
+    y = math.max(1, math.min(y, data.outputImagedata:getHeight()))
+    return x, y
+end
+
+function drawInGrid(grid, endX, endY, mouseInput)
+    local startX, startY = mouseInput.startX, mouseInput.startY
     if startX == x and startY == y then 
-        state[y][x] = brushColor
+        grid[y][x] = mouseInput.brushColor
     else 
         for i = math.min(startY, endY), math.max(startY, endY) do
             for j = math.min(startX, endX), math.max(startX, endX) do
-                if i > 0 and j > 0 then state[i][j] = brushColor end
+                if i > 0 and j > 0 then grid[i][j] = mouseInput.brushColor end
             end
         end
     end
-    if app.loopCount > 0 then
-        app.loopCount = 0
-        print("   restarted loop and heatmap.")
+    if app.loopsSinceInput > 0 then
+        app.loopsSinceInput = 0
     end
-    updateImagedata(output.imageData, state, app)
-    output.image:replacePixels(output.imageData)
+    updateImagedata(data.outputImagedata, grid)
+    data.outputImage:replacePixels(data.outputImagedata)
 end
 
 
 -- helper functions
-
-function mouseToCoordinate(x, y)
-    x, y = math.floor(x / output.zoomLevel) + 1, math.floor(y / output.zoomLevel) + 1
-    -- clamp to image size
-    x = math.max(1, math.min(x, output.imageData:getWidth()))
-    y = math.max(1, math.min(y, output.imageData:getHeight()))
-    return x, y
-end
 
 function shallowCopy(orig)
     local copy = {}
@@ -435,7 +347,6 @@ function rotatePattern(table)
     return newTable
 end
 
--- Function to check if two 2D arrays are equal
 function patternsEqual(matrix1, matrix2)
     local rows, cols = #matrix1, #matrix1[1]
     for i = 1, rows do
