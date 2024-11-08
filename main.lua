@@ -2,7 +2,7 @@ require "update"
 require "parse"
 
 local output = {
-    updateInterval = 0.04,
+    updateInterval = 0.05,
     zoomLevel = 8,
     timeSinceLastUpdate = 0,
     image = nil,
@@ -24,7 +24,9 @@ local app = {
     error = false,
     viewingCode = false,
     focused = true,
-    printing = false
+    printing = false,
+    loopCount = 0, -- gets reset when rules or state are changed manually
+    activeHeatmapRule = 0, 
 }
 
 -- the app parses two images, source.png and rules.png.
@@ -38,7 +40,6 @@ function love.load()
     local found = loadState("source.png")
     if found == false then return end
     loadRules("rules.png")
-    print("running.")
 end
 
 function loadState(filename)
@@ -58,7 +59,7 @@ function loadState(filename)
     initialImageHash = newHash
 
     -- continue loading image data
-    print("loading or reloading state from " .. filename)
+    print("found new " .. filename)
     initialImageData = newImageData
 
     -- display the state as the output image
@@ -84,11 +85,15 @@ function loadRules(filename)
     rulesImageHash = newHash
 
     -- continue loading image data
-    print("loading or reloading rules from " .. filename)
+    print("found new " .. filename)
     rulesImageData = newImageData
 
     -- parse rules
     rewriteRules = parseRules(rulesImageData)
+    if app.loopCount > 0 then
+        app.loopCount = 0
+        print("restarted loop and heatmap.")
+    end
     return true
 end
 
@@ -101,6 +106,10 @@ function setupOutput(output, outputImageData)
     if app.viewingCode == false then
         -- parse initial state
         rewriteState = parseState(output.imageData)
+        if app.loopCount > 0 then
+            app.loopCount = 0
+            print("restarted loop and heatmap.")
+        end
         -- set image to represent the initial state
         updateImagedata(output.imageData, rewriteState, app)
         app.idle = false
@@ -124,22 +133,32 @@ function setupWindow(newWidth, newHeight, zoomLevel)
     end
 end
 
+local hitsUntilIdle, missesUntilIdle = 0, 0
+
 function love.update(dt)
-    if app.error or app.viewingCode or app.idle or app.paused then
-        -- do nothing
-        return
-    elseif love.window.hasFocus() == false then
-        -- pause when window loses focus
-        app.focused = false
-        print("lost focus.") -- wip, does this actually pause
-        return
-    elseif not app.focused and love.window.hasFocus() then
+    if not app.focused and love.window.hasFocus() then
         -- resume when window regains focus
         app.focused = true
         print("regained focus.")   
-        loadState("source.png") -- if the file changed
-        loadRules("rules.png") -- if the file changed
-        -- wip, should the above return something so we can either return or not
+        -- reload state and rules
+        local stateChanged = loadState("source.png")
+        local rulesChanged = loadRules("rules.png")
+        if stateChanged then
+            print("loaded new state.")
+        end
+        if rulesChanged then
+            print("loaded new rules.")
+        end
+    end
+    if love.window.hasFocus() == false and app.focused then
+        -- pause when window loses focus
+        app.focused = false
+        print("lost focus.")         
+        return
+    end
+    if app.error or app.viewingCode or app.idle or app.paused then
+        -- do nothing
+        return
     end
 
     -- if viewing state, update the state and image in some interval
@@ -149,10 +168,18 @@ function love.update(dt)
         output.timeSinceLastUpdate = output.timeSinceLastUpdate - output.updateInterval
 
         -- new state, apply rules once
-        local madeChanges = updateState(rewriteState, rewriteRules)
+        local madeChanges, hits, misses = updateState(rewriteState, rewriteRules, app)
+        app.loopCount = app.loopCount + 1
+        hitsUntilIdle = hitsUntilIdle + hits
+        missesUntilIdle = missesUntilIdle + misses
+        -- print("turn " .. app.loopCount .. ".")
         if not madeChanges then
             app.idle = true
-            print("idle.")
+            print("   idle.")
+            print("   total " .. hitsUntilIdle .. "/" .. missesUntilIdle + hitsUntilIdle .. " matches during " .. app.loopCount .. " turns.")
+            print("   hit rate is " ..  string.format("%.3f", (hitsUntilIdle / (missesUntilIdle + hitsUntilIdle)) * 100)  .. "%.")
+            hitsUntilIdle, missesUntilIdle = 0, 0
+            print()
             -- no return here, so the image is still updated once more
         end
         -- update image
@@ -246,15 +273,34 @@ function love.keypressed(key, scancode, isrepeat)
         local rotateCountPerDirection = {up = 3, down = 1, left = 2, right = 0}
         local rotateCount = rotateCountPerDirection[key]
         local rotatedRules = getRotatedRules(rotateCount, rewriteRules)
-        print("rotating rules " .. key .. " and running once.")
+        print("input " .. key)
         
-        -- update and output just once
-        app.idle = true
-        updateState(rewriteState, rotatedRules)
+        -- update and output. on the first turn, pass 
+        app.idle = false
+        app.playerInput = true
+        if app.loopCount > 0 then
+            app.loopCount = 0
+            --print("restarted loop and heatmap.")
+        end
+        timeSinceLastUpdate = 0
+        updateState(rewriteState, rotatedRules, app)
+        updateImagedata(output.imageData, rewriteState, app)
+        output.image:replacePixels(output.imageData)
+        app.playerInput = false
+
+    elseif key == "1" or key == "2" then
+        -- increment or decrement the active heatmap rule index
+        app.activeHeatmapRule = app.activeHeatmapRule + (key == "1" and -1 or 1)
+        if app.activeHeatmapRule <= 0 then
+            app.activeHeatmapRule = 0
+            print("viewing state without heatmap.")
+        else
+            print("viewing heatmap for rule: " .. app.activeHeatmapRule)
+        end
         updateImagedata(output.imageData, rewriteState, app)
         output.image:replacePixels(output.imageData)
     else
-        print("key pressed: " .. key)
+        --print("key pressed: " .. key)
     end
 end
 
@@ -268,6 +314,9 @@ function love.mousepressed(x, y, button, istouch, presses)
         local x, y = mouseToCoordinate(x, y)
         startX, startY = x, y
 
+        if app.viewingCode then
+            return
+        end
         local previewState = deeperCopy(rewriteState)
         updateStateFromMouseInput(previewState, startX, x, startY, y, brushColor)
     end
@@ -277,6 +326,9 @@ function love.mousemoved(x, y, dx, dy, istouch)
     if love.mouse.isDown(1) or love.mouse.isDown(2) then
         local x, y = mouseToCoordinate(x, y)
 
+        if app.viewingCode then
+            return
+        end
         local previewState = deeperCopy(rewriteState)
         updateStateFromMouseInput(previewState, startX, x, startY, y, brushColor)
     end
@@ -288,6 +340,9 @@ function love.mousereleased(x, y, button, istouch, presses)
         app.idle = false
         local x, y = mouseToCoordinate(x, y)
 
+        if app.viewingCode then
+            return
+        end
         updateStateFromMouseInput(rewriteState, startX, x, startY, y, brushColor)
     end
     startX, startY = 0, 0
@@ -302,6 +357,10 @@ function updateStateFromMouseInput(state, startX, endX, startY, endY, brushColor
                 if i > 0 and j > 0 then state[i][j] = brushColor end
             end
         end
+    end
+    if app.loopCount > 0 then
+        app.loopCount = 0
+        print("   restarted loop and heatmap.")
     end
     updateImagedata(output.imageData, state, app)
     output.image:replacePixels(output.imageData)

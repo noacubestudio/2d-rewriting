@@ -87,6 +87,7 @@ function parseRules(imageData)
     local height = imageData:getHeight()
     local width = imageData:getWidth()
     print("parsing rules image, " .. width .. "x" .. height)
+    print()
 
     -- go down the image and collect rules
     -- rules contain 2d arrays of numbers representing black and white pixels / the changing pixels
@@ -101,7 +102,7 @@ function parseRules(imageData)
         local lastPixelEmpty = true
         for x=0, width-1 do
             local r, g, b, a = imageData:getPixel(x, y)
-            local pixel = parseColor(r, g, b, a)
+            local pixel = a > 0 and parseColor(r, g, b) or nil
 
             if pixel ~= nil then
                 if lastPixelEmpty then
@@ -122,7 +123,7 @@ function parseRules(imageData)
                 for i, section in ipairs(rowSections) do
                     table.insert(currentRulePatterns, {}) -- establish number of sections to match row
                 end
-                io.write("(1 -> " .. #currentRulePatterns - 1 .. ") ")
+                --io.write("(1 -> " .. #currentRulePatterns - 1 .. ") ")
             end
             -- add the row sections to the patterns
             for i, section in ipairs(rowSections) do
@@ -137,18 +138,19 @@ function parseRules(imageData)
                     local result = rotateAllPatterns(rotations[#rotations])
                     if result then table.insert(rotations, rotateAllPatterns(rotations[#rotations])) end
                 end
-                print("-------- " .. #rotations)
+                local w, h, n = #currentRulePatterns[1][1], #currentRulePatterns[1], #currentRulePatterns
+                print("<> " .. w .. "x" .. h .. ", " .. #rotations .. " rot. " .. n - 1 .. " var.")
                 for _, rule in ipairs(rotations) do
                     table.insert(rules, rule)
-                    printPatternsSideBySide(rule)
-                    print()
+                    --printPatternsSideBySide(rule)
+                    --print()
                 end
             end
         end
         lastRowEmpty = #rowSections == 0
     end
 
-    print("parsed " .. #rules .. " rules.")
+    print("   parsed " .. #rules .. " rules.")
     print()
     return rules
 end
