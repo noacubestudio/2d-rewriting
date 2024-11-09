@@ -180,6 +180,7 @@ function applyRulesToGrid(gridBeforeTurn, rules)
     return false, totalHits, totalMisses
 end
 
+
 -- use the grid table to update the image data
 -- visual-only effects can be applied here
 
@@ -224,11 +225,13 @@ function updateImagedata(imageData, grid)
                 1)
             else
                 local color = palette[row[x+1]+1]
-                local randomFactor = not (app.editing or app.paused or app.idle) and 0.95 + love.math.random() * 0.05 or 1
+                -- increase randomness with loop count
+                local randomness = math.min(app.loopsSinceInput * 0.002, 0.2)
+                local noise = not (app.editing or app.paused or app.idle) and 1-randomness + love.math.random() * randomness or 1
                 imageData:setPixel(x, y, 
-                    color[1] * randomFactor, 
-                    color[2] * randomFactor, 
-                    color[3] * randomFactor, 
+                    color[1] * noise, 
+                    color[2] * noise, 
+                    color[3] * noise, 
                 1)
             end
         end

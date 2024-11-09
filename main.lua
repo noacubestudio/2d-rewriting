@@ -2,6 +2,8 @@ require "setup"
 require "parse"
 require "update"
 
+require "TSerial"
+
 app = {
     -- state
     idle = true,
@@ -23,7 +25,11 @@ app = {
     updateInterval = 0.05,
 
     -- settings
-    zoomLevel = 4,
+    settings = {
+        pixelScale = 4,
+        windowX = nil,
+        windowY = nil,
+    },
 }
 
 local mouseInput = {
@@ -46,11 +52,23 @@ local data = {
 }
 
 function love.load() 
+    loadSettings(app.settings, "settings.lua")
     loadState(data, "source.png")
     loadRules(data, "rules.png")
 end
 
 function love.update(dt)
+
+    -- update every <updateInterval> seconds
+    local updateNow = false
+    app.timeSinceLastUpdate = app.timeSinceLastUpdate + dt
+    if app.timeSinceLastUpdate > app.updateInterval then
+        app.timeSinceLastUpdate = app.timeSinceLastUpdate - app.updateInterval
+        updateNow = true
+    end
+
+    if updateNow then updateTitle(data) end
+
     if not app.focused and love.window.hasFocus() then
         -- resume when window regains focus
         app.focused = true
@@ -69,11 +87,7 @@ function love.update(dt)
     end
 
     -- state is shown and unpaused and not idle (more potential changes to be made)
-    -- update every <updateInterval> seconds
-
-    app.timeSinceLastUpdate = app.timeSinceLastUpdate + dt
-    if app.timeSinceLastUpdate > app.updateInterval then
-        app.timeSinceLastUpdate = app.timeSinceLastUpdate - app.updateInterval
+    if updateNow then
 
         -- new state, apply rules once
         local madeChanges, hits, misses = applyRulesToGrid(data.grid, data.rules)
@@ -83,8 +97,8 @@ function love.update(dt)
         -- print("turn " .. app.loopsSinceInput .. ".")
         if not madeChanges then
             app.idle = true
-            print("   idle.")
-            print("   total " .. app.hitsSinceInput .. "/" .. app.missesSinceInput + app.hitsSinceInput .. " matches during " .. app.loopsSinceInput .. " turns.")
+            print("   idle after " .. app.loopsSinceInput .. " turns.")
+            print("   total: " .. app.hitsSinceInput .. "/" .. app.missesSinceInput + app.hitsSinceInput .. " matches.")
             print("   hit rate is " ..  string.format("%.3f", (app.hitsSinceInput / (app.missesSinceInput + app.hitsSinceInput)) * 100)  .. "%.")
             app.hitsSinceInput, app.missesSinceInput = 0, 0
             print()
@@ -101,16 +115,23 @@ function love.draw()
         return
     end
     -- draw output image using the scale. matches window size.
-    love.graphics.scale(app.zoomLevel, app.zoomLevel)
+    love.graphics.scale(app.settings.pixelScale, app.settings.pixelScale)
     love.graphics.draw(data.outputImage, 0, 0)
     love.graphics.reset()
+
+    --love.graphics.setColor(1, 0, 0)
+    --love.graphics.print("FPS: "..tostring(love.timer.getFPS( )), 0, 0)
     
-    local fps = love.timer.getFPS()
-    if fps < 30 then
-        love.graphics.setColor(1, 0, 0)
-        love.graphics.print("FPS: "..tostring(love.timer.getFPS( )), 0, 0)
-    end
     love.graphics.setColor(1, 1, 1)
+end
+
+function love.quit()
+    -- window position
+    app.settings.windowX, app.settings.windowY = love.window.getPosition()
+
+    -- save settings on quit
+    local contents = TSerial.pack(app.settings, false, true)
+    love.filesystem.write("settings.lua", contents)
 end
 
 -- input handling
@@ -133,7 +154,8 @@ function love.keypressed(key, scancode, isrepeat)
         -- reset
         print("resetting state.")
         updatePallette()
-        setupWindow(data.sourceImagedata:getWidth(), data.sourceImagedata:getHeight(), app.zoomLevel)
+        newWidth, newHeight = data.sourceImagedata:getWidth(), data.sourceImagedata:getHeight()
+        setupWindow(newWidth, newHeight, app.settings)
         setupOutput(data) 
     
     elseif key == "l" then
@@ -161,17 +183,18 @@ function love.keypressed(key, scancode, isrepeat)
     
     elseif key == "tab" then
         -- switch between rule and state display
+        local newWidth, newHeight
         if app.viewingCode then
             app.viewingCode = false
             print("viewing state.")
-            setupWindow(data.sourceImagedata:getWidth(), data.sourceImagedata:getHeight(), app.zoomLevel)
-            setupOutput(data)
+            newWidth, newHeight = data.sourceImagedata:getWidth(), data.sourceImagedata:getHeight()
         else
             app.viewingCode = true
             print("viewing code.")
-            setupWindow(data.rulesImagedata:getWidth(), data.rulesImagedata:getHeight(), app.zoomLevel)
-            setupOutput(data)
+            newWidth, newHeight = data.rulesImagedata:getWidth(), data.rulesImagedata:getHeight()
         end
+        setupWindow(newWidth, newHeight, app.settings)
+        setupOutput(data)
 
     elseif key == "up" or key == "down" or key == "left" or key == "right" then
         -- input keys for games, etc.
@@ -198,8 +221,16 @@ function love.keypressed(key, scancode, isrepeat)
     elseif key == "1" or key == "2" then
         -- show different heatmaps over the state that represent where each rule matched since last input
         app.viewingHeatmapForRule = app.viewingHeatmapForRule + (key == "1" and -1 or 1)
-        if app.viewingHeatmapForRule <= 0 then
+
+        -- cycle through rules
+        if app.viewingHeatmapForRule < 0 then
+            app.viewingHeatmapForRule = #data.rules
+        elseif app.viewingHeatmapForRule > #data.rules then
             app.viewingHeatmapForRule = 0
+        end
+
+        -- 0 is the default state without heatmap
+        if app.viewingHeatmapForRule == 0 then
             print("viewing state without heatmap.")
         else
             print("viewing heatmap for rule: " .. app.viewingHeatmapForRule)
@@ -209,6 +240,23 @@ function love.keypressed(key, scancode, isrepeat)
     else
         --print("key pressed: " .. key)
     end
+end
+
+-- scroll
+function love.wheelmoved(x, y)
+
+    -- first get position of window
+    app.settings.windowX, app.settings.windowY = love.window.getPosition()
+
+    if y > 0 then
+        -- scroll up
+        app.settings.pixelScale = app.settings.pixelScale + 1
+    elseif y < 0 then
+        -- scroll down
+        app.settings.pixelScale = math.max(1, app.settings.pixelScale - 1)
+    end
+    local baseWidth, baseHeight = data.outputImagedata:getWidth(), data.outputImagedata:getHeight()
+    setupWindow(baseWidth, baseHeight, app.settings)
 end
 
 function love.mousepressed(x, y, button, istouch, presses)
@@ -236,14 +284,6 @@ function love.mousemoved(x, y, dx, dy, istouch)
         local previewState = deeperCopy(data.grid)
         drawInGrid(previewState, x, y, mouseInput)
     end
-
-    -- middle mouse to move window
-    if love.mouse.isDown(3) then
-        local previousWindowX, previousWindowY = love.window.getPosition()
-        local width, height = love.graphics.getDimensions( )
-        local dx, dy = love.mouse.getPosition() - width / 2, love.mouse.getY() - height / 2
-        love.window.setPosition(previousWindowX + dx, previousWindowY + dy)
-    end
 end
 
 function love.mousereleased(x, y, button, istouch, presses)
@@ -261,7 +301,7 @@ function love.mousereleased(x, y, button, istouch, presses)
 end
 
 function mouseToCoordinate(x, y)
-    x, y = math.floor(x / app.zoomLevel) + 1, math.floor(y / app.zoomLevel) + 1
+    x, y = math.floor(x / app.settings.pixelScale) + 1, math.floor(y / app.settings.pixelScale) + 1
     -- clamp to image size
     x = math.max(1, math.min(x, data.outputImagedata:getWidth()))
     y = math.max(1, math.min(y, data.outputImagedata:getHeight()))
