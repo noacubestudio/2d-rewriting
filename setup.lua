@@ -14,68 +14,78 @@ function loadSettings(settings, filename)
     for key, value in pairs(loadedSettings) do
         settings[key] = value
     end
-    print("loaded settings.")
+    print("loaded " .. filename)
+    print()
+    print("    pixelScale: " .. settings.pixelScale)
+    print("    windowX: " .. settings.windowX)
+    print("    windowY: " .. settings.windowY)
+    print("    logRules: " .. tostring(settings.logRules))
+    print()
 end
 
-
--- see if there is a new state image, and if so, set its' data as the starting state.
-function loadState(data, filename)
+-- load latest image file, compare hash, and update if changed.
+function loadLatestFile(filename, data, destinationKey, notFoundMessage) 
     if love.filesystem.getInfo(filename) == nil then
         print(filename .. " not found")
-        love.window.showMessageBox(filename .. "not found", "The PNG is used to generate the initial state.", "error")
+        love.window.showMessageBox(filename .. " not found", notFoundMessage, "error")
         app.error = true
-        return
+        return false
     end
 
     -- load and first check if the image has changed
     local newImageData = love.image.newImageData(filename)
     local newHash = imageHash(newImageData)
-    if newHash == data.sourceImageHash then
+    if newHash == data[destinationKey].imageHash then
         print("no change in " .. filename)
-        return
+        return false
     end
-    data.sourceImageHash = newHash
-
-    -- continue loading image data
+    data[destinationKey].imageHash = newHash
+    data[destinationKey].imagedata = newImageData
+    data[destinationKey].width = newImageData:getWidth()
+    data[destinationKey].height = newImageData:getHeight()
     print("found new " .. filename)
-    data.sourceImagedata = newImageData
-
-    -- display the state as the output image
-    newWidth, newHeight = data.sourceImagedata:getWidth(), data.sourceImagedata:getHeight()
-    setupWindow(newWidth, newHeight, app.settings)
-    setupOutput(data)
-    print("loaded new state.")
+    return true
 end
 
-
--- see if there is a new rules image, parse it to overwrite the current rules.
-function loadRules(data, filename)
-    if love.filesystem.getInfo(filename) == nil then
-        print(filename .. " not found")
-        love.window.showMessageBox(filename .. "not found", "The PNG is parsed to generate the rewrite rules.", "error")
-        app.error = true
-        return
+function loadImages(data)
+    -- symbols
+    local changed = loadLatestFile('symbols.png', data, "symbols", 
+        "The PNG is required to generate the builtin symbols.")
+    if changed then 
+        data.symbols.table = parseSymbolsImage(data.symbols.imagedata)
+        restartLoop()
     end
 
-    -- load and first check if the image has changed
-    local newImageData = love.image.newImageData(filename)
-    local newHash = imageHash(newImageData)
-    if newHash == data.rulesImageHash then
-        print("no change in " .. filename)
+    -- state
+    changed = loadLatestFile('source.png', data, "board", 
+        "The PNG is required to generate the initial state.")
+    if changed then 
+        -- display the state as the output image
+        setupWindow(data.board.width, data.board.height, app.settings)
+        setupOutput(data) -- also restarts the loop
         print()
-        return
+        print("   loaded new state.")
+        print()
     end
-    data.rulesImageHash = newHash
 
-    -- continue loading image data
-    print("found new " .. filename)
-    data.rulesImagedata = newImageData
+    -- rules
+    changed = loadLatestFile('rules.png', data, "rules", 
+        "The PNG is required to generate the rewrite rules.")
+    if changed then 
+        -- parse rules
+        -- symbols table contains keys
+        local symbolCount = 0
+        for key, value in pairs(data.symbols.table) do
+            symbolCount = symbolCount + 1
+        end
+        if symbolCount == 0 then
+            print("no symbols loaded yet, can't parse rules.")
+            app.error = true
+            return
+        end
 
-    -- parse rules
-    data.rules = parseRules(data.rulesImagedata)
-    if app.loopsSinceInput > 0 then
-        app.loopsSinceInput = 0
-        print("restarted loop and heatmap.")
+        data.rules.table = parseRulesImage(data.rules, data.symbols.table)
+        restartLoop()
     end
 end
 
@@ -84,24 +94,21 @@ end
 function setupOutput(data)
     
     if not app.viewingCode then
-        -- show source image, make initial edits. (gray turns into 1 or 0)
-        data.outputImagedata = data.sourceImagedata:clone()
-        data.grid = parseState(data.outputImagedata)
-        updateImagedata(data.outputImagedata, data.grid)
+        -- show board, make initial edits. (gray turns into 1 or 0)
+        data.output.imagedata = data.board.imagedata:clone()
+        data.board.table = parseBoardImage(data.output.imagedata)
+        updateImagedata(data.output.imagedata, data.board.table)
 
         -- start looping
         app.idle = false
-        if app.loopsSinceInput > 0 then
-            app.loopsSinceInput = 0
-            print("restarted loop and heatmap.")
-        end
+        restartLoop()
     else
         -- show rules image
-        data.outputImagedata = data.rulesImagedata:clone()
+        data.output.imagedata = data.rules.imagedata:clone()
     end
 
-    data.outputImage = love.graphics.newImage(data.outputImagedata)
-    data.outputImage:replacePixels(data.outputImagedata)
+    data.output.image = love.graphics.newImage(data.output.imagedata)
+    data.output.image:replacePixels(data.output.imagedata)
 end
 
 
@@ -138,7 +145,7 @@ function updateTitle(data)
     title = title .. " - " .. love.timer.getFPS() .. " fps)"
 
     if app.viewingCode then
-        local rulecount = #data.rules
+        local rulecount = #data.rules.table
         title = title .. " - " .. rulecount .. " rule" .. (rulecount == 1 and "" or "s")
     elseif app.printing then
         title = title .. " - saving image..."
@@ -147,10 +154,10 @@ function updateTitle(data)
     elseif app.editing then
         --title = title .. " - editing"
     elseif app.viewingHeatmapForRule > 0 then
-        title = title .. " - showing pixels changed by rule " .. app.viewingHeatmapForRule .. " (of " .. #data.rules .. ")"
-    elseif not app.idle then
+        title = title .. " - showing pixels changed by rule " .. app.viewingHeatmapForRule .. " (of " .. #data.rules.table .. ")"
+    elseif app.hitsSinceInput > 0 then
         local appliedCount = app.hitsSinceInput
-        title = title .. " - " .. appliedCount .. "..."
+        title = title .. " - " .. appliedCount .. " changes..."
     end
 
     love.window.setTitle(title)
