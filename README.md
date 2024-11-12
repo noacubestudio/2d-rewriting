@@ -6,26 +6,28 @@ It should open with a console that gives some basic feedback. Put a source.png, 
 
 ## Draw to describe
 The starting board is generated from source.png. It should contain black and white pixels. Gray will turn into either black or white with a 50-50 chance.
-THe rules are parsed from rules.png.
 
-Colors with any amount of chroma are ignored and can be used as comments. Patterns of white and black pixels will be searched for in the board and replaced. Gray pixels are wildcards.
-Put multiple rectangular same-dimension b/w images side by side to create a rewrite rule that replaces the left with right. Multiple options on the right will be chosen at random.
+The rules are parsed from rules.png.
 
-A row of fully ignored pixels (such as any saturated color) indicates the end of one rule and the start of another. Gaps can be any width above 0 px. To combine multiple rewrites in a single rule (where all have to match), just make sure that they are separated by a smaller or bigger graphic if their dimensions are otherwise the same.
+In rules, colors with any amount of chroma are ignored and can be used as comments. Patterns of white and black pixels will be searched for in the board and replaced. Gray pixels are wildcards.
+Put multiple rectangular same-dimension b/w images side by side to create a rewrite rule that replaces the left with right. Multiple options on the right will be chosen from at random.
 
-Images in the row that are not the same dimensions as the ones to the left and right of them are not rewrites, but keywords that modify the rule. If the image does not match a keyword, it is simply removed.THis is why you can use a single black or white pixel to separate multiple rewrite rules that are, say, 5x5 pixels.
+A row of fully ignored pixels (such as any saturated color) indicates the end of one rule and the start of another. Gaps can be any width. 
 
-Keyword graphics can be set by drawing them, one under the other, in symbols.png. The symbols correspond to the following keywords, in the same order:
+To combine multiple rewrites in a single rule (where all have to match), one way would be to make their dimensions distinct.
+Images in the row that are not the same dimensions as the ones to the left and right of them are not rewrites, but keywords that modify the remaining rule (or are used while the rules run). If the image does not match a keyword, it is simply removed. THis is why you can use a single black or white pixel to separate multiple rewrite rules that are, say, all 5x5 px patterns.
+
+The graphics for keyword graphics can be set by drawing them, one under the other, in symbols.png. The symbols correspond to the following keywords, in the same order:
 * rotate  (creates all 4 rotations for the rest of the rule)
-* flip horizontal (crates both versions)
-* flip vertical (crates both versions)
+* flip horizontal (creates both versions)
+* flip vertical (creates both versions)
 * lock to grid (currently *not supported*)
 * input right
 * input down
 * input left
 * input up
 
-It is useful to make the input symbols rotated versions of each other since a rotate keyword in front then rotates it in the rule before it is parsed.
+It is useful to make the input symbols rotated versions of each other, since a rotate keyword in front then rotates them in the rule before they are even parsed.
 Same with the horizontal and vertical mirrors. If you don't want a keyword to mess with another, make the latter entirely symmetrical. A more elaborate system with more control may be added later...
 
 ## Controls
