@@ -1,4 +1,4 @@
-Early work-in-progress, documentation and examples will be added later.
+Early work-in-progress, better documentation and examples will be added later.
 
 ## Get started
 Install LÖVE, download the folder and [launch the project](https://love2d.org/wiki/Getting_Started).
@@ -28,20 +28,24 @@ The graphics for keyword graphics can be set by drawing them, one under the othe
 * input up
 
 It is useful to make the input symbols rotated versions of each other, since a rotate keyword in front then rotates them in the rule before they are even parsed.
-Same with the horizontal and vertical mirrors. If you don't want a keyword to mess with another, make the latter entirely symmetrical. A more elaborate system with more control may be added later...
+Same with the horizontal and vertical flip. If you don't want a keyword to mess with another, make the latter entirely symmetrical. A more elaborate system with more control may be added later...
 
 ## Controls
 
 Left and right mouse buttons can be used to draw rectangles of either color on the board, or to create single pixels.
 
-`S` to save the current board to the LÖVE appdata folder. 
+`S` to save the current board to the LÖVE appdata folder as an image. Overwrites the previous image of the same name there. 
+
+The appdata folder also contains a settings.lua. Toggle the `logRules` setting if you want to see how rules are parsed in the console. It uses $$ for white, [] for black, .. for wildcard and single ; to separate rewrites in the same rule.
 
 `R` to reset to the image in the project folder.
-Focusing the tab after making changes to the images elsewhere should reload them.
+Focusing the tab after making changes to the images elsewhere (or pressing `l`) should reload them if they changed.
 
 `Arrow keys` to provide input. Rules with the matching input keyword will be able to match for one turn.
 
 `Space` to pause the update loop.
+
+Mouse wheel to change the pixel size/ window size. `Esc` to close program.
 
 `TAB` to toggle betveen viewing the rules and the state of the board. The rules view is incomplete and will be interactive later.
 
