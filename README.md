@@ -32,12 +32,16 @@ Same with the horizontal and vertical mirrors. If you don't want a keyword to me
 
 Left and right mouse buttons can be used to draw rectangles of either color on the board, or to create single pixels.
 
-S to save the current board to the LÖVE appdata folder. 
-R to reset to the image in the project folder.
+`S` to save the current board to the LÖVE appdata folder. 
+
+`R` to reset to the image in the project folder.
 Focusing the tab after making changes to the images elsewhere should reload them.
 
-Arrow keys to provide input. Rules with the matching input keyword will be able to match for one turn.
-Space to pause.
-TAB to toggle betveen viewing the rules and the state of the board. The rules view is incomplete and will be interactive later.
-1/2 to cycle through heatmap vizualisations (decrement/ increment). The last visualization (wrap around to it by pressing 1) should show where rules apply in realtime.
+`Arrow keys` to provide input. Rules with the matching input keyword will be able to match for one turn.
+
+`Space` to pause the update loop.
+
+`TAB` to toggle betveen viewing the rules and the state of the board. The rules view is incomplete and will be interactive later.
+
+`1`/`2` to cycle through heatmap vizualisations (decrement/ increment). The last visualization (wrap around to it by pressing 1) should show where rules apply in realtime.
 The others show all rewrites using one rule (expanded, so just one rotation etc. individually) since the last player input.
