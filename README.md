@@ -17,7 +17,7 @@ Put multiple rectangular same-dimension b/w images side by side to create a rewr
 A row of fully ignored pixels (such as any saturated color) indicates the end of one rule and the start of another. Gaps can be any width. 
 
 To combine multiple rewrites in a single rule (where all have to match), one way would be to make their dimensions distinct.
-Images in the row that are not the same dimensions as the ones to the left and right of them are not rewrites, but keywords that modify the remaining rule (or are used while the rules run). If the image does not match a keyword, it is simply removed. THis is why you can use a single black or white pixel to separate multiple rewrite rules that are, say, all 5x5 px patterns.
+Images in the row that are not the same dimensions as the ones to the left and right of them are not rewrites, but keywords that modify the remaining rule (or are used while the rules run). If the image does not match a keyword, it is simply removed. This is why you can use a single black or white pixel to separate multiple rewrite rules that are, say, all 5x5 px patterns.
 
 The graphics for keyword graphics can be set by drawing them, one under the other, in symbols.png. The symbols correspond to the following keywords, in the same order:
 * rotate  (creates all 4 rotations for the rest of the rule)
@@ -38,7 +38,7 @@ Left and right mouse buttons can be used to draw rectangles of either color on t
 
 `S` to save the current board to the LÖVE appdata folder as an image. Overwrites the previous image of the same name there. 
 
-The appdata folder also contains a settings.lua. Toggle the `logRules` setting if you want to see how rules are parsed in the console. It uses $$ for white, [] for black, .. for wildcard and single ; to separate rewrites in the same rule.
+The appdata folder also contains a settings.lua. Toggle the `logRules` setting if you want to see how rules are parsed in the console. It uses `$$` for white, `[]` for black, `..` for wildcard and single `;` to separate rewrites in the same rule.
 
 `R` to reset to the image in the project folder.
 Focusing the tab after making changes to the images elsewhere (or pressing `l`) should reload them if they changed.
@@ -53,3 +53,6 @@ Mouse wheel to change the pixel size/ window size. `Esc` to close program.
 
 `1`/`2` to cycle through heatmap vizualisations (decrement/ increment). The last visualization (wrap around to it by pressing 1) should show where rules apply in realtime.
 The others show all rewrites using one rule (expanded, so just one rotation etc. individually) since the last player input.
+
+![grafik](https://github.com/user-attachments/assets/b9c231ca-5ae1-436c-ac75-494c693f0f8c)
+
