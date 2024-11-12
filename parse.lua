@@ -276,7 +276,7 @@ function parseRulesImage(rulesData, symbolData)
         if #ruleBefore == 0 then
             return {}
         end
-        local rule = deepCopyRule(ruleBefore)
+        local rule = deepCopy(ruleBefore)
 
         -- find next word 'symbol' in the rule
         local symbolIndex = nil
@@ -319,7 +319,7 @@ function parseRulesImage(rulesData, symbolData)
                 end
                 local createdVariants = modifyRestOfRule(rest, parsedSymbol)
                 for _, variant in ipairs(createdVariants) do
-                    local newRule = deepCopyRule(base)
+                    local newRule = deepCopy(base)
                     for _, part in ipairs(variant) do
                         table.insert(newRule, part)
                     end
@@ -470,74 +470,6 @@ function parseColor(r, g, b)
     end
 end
 
-function printPatternsSideBySide(tables)
-    print()
-    local tallestSize = 0
-    for _, symbol in ipairs(tables) do
-        if type(symbol) ~= "string" then
-            tallestSize = math.max(tallestSize, #symbol)
-        end
-    end
-
-    for y = 1, tallestSize do -- for each row, print row of the symbols side by side
-        io.write("   ")
-        for _, symbol in ipairs(tables) do -- each symbol
-            if type(symbol) == "string" then
-                -- keyword
-                if y == 1 then
-                    io.write(symbol)
-                else
-                    -- match the width of the word with spaces underneath
-                    for _ = 1, #symbol do
-                        io.write(" ")
-                    end
-                end
-            else 
-                -- 2d table
-                if type(symbol[1]) ~= "table" then
-                    print("not a 2d table")
-                    return
-                end
-                if y <= #symbol then
-                    for x = 1, #symbol[y] do
-                        local char = symbol[y][x] == 1 and "$$" or symbol[y][x] == 0 and "[]" or ". "
-                        io.write(char)
-                    end
-                else
-                    for _ = 1, #symbol[1] do
-                        io.write("  ")
-                    end
-                end
-            end
-            io.write("  ") -- space between symbols
-        end
-        print()
-    end
-end
-
-function swapAxes(t)
-    local newTable = {}
-    for y = 1, #t[1] do
-        newTable[y] = {}
-        for x = 1, #t do
-            newTable[y][x] = t[x][y]
-        end
-    end
-    return newTable
-end
-
-function deepCopyRule(rule)
-    local newRule = {}
-    for i, part in ipairs(rule) do
-        if type(part) == "table" then
-            newRule[i] = deepCopyRule(part)
-        else
-            newRule[i] = part
-        end
-    end
-    return newRule
-end
-
 function getRotatedRules(rotateCount, originalRules)
     local rotatedRules = {}
     if rotateCount == 0 then
@@ -552,7 +484,7 @@ function getRotatedRules(rotateCount, originalRules)
     return rotatedRules
 end
 
-function rotateAllPatterns(rule) -- doesn't require deep copy, pretty sure
+function rotateAllPatterns(rule) -- doesn't require deep copy, apparently
     local newRule = {}
     local symmetrical = true
     for i, part in ipairs(rule) do

@@ -155,6 +155,8 @@ function updateTitle(data)
         --title = title .. " - editing"
     elseif app.viewingHeatmapForRule > 0 then
         title = title .. " - showing pixels changed by rule " .. app.viewingHeatmapForRule .. " (of " .. #data.rules.table .. ")"
+    elseif app.viewingHeatmapForRule == -1 then
+        title = title .. " - global heatmap of current cycle"
     elseif app.hitsSinceInput > 0 then
         local appliedCount = app.hitsSinceInput
         title = title .. " - " .. appliedCount .. " changes..."

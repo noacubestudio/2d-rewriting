@@ -248,25 +248,30 @@ function love.keypressed(key, scancode, isrepeat)
         app.viewingHeatmapForRule = app.viewingHeatmapForRule + (key == "1" and -1 or 1)
 
         -- cycle through rules
-        if app.viewingHeatmapForRule < 0 then
+        if app.viewingHeatmapForRule < -1 then
             app.viewingHeatmapForRule = #data.rules.table
         elseif app.viewingHeatmapForRule > #data.rules.table then
-            app.viewingHeatmapForRule = 0
+            app.viewingHeatmapForRule = -1
         end
 
         -- 0 is the default state without heatmap
         if app.viewingHeatmapForRule == 0 then
             print("viewing state without heatmap.")
         else
-            print("viewing heatmap for rule: " .. app.viewingHeatmapForRule)
-            -- wip. what order are those heatmaps in? is the displayed rule the same?
-            -- get the rule
-            --local rule = data.rules.table[app.viewingHeatmapForRule]
-            ---- print to console
-            --for i, v in ipairs(rule.rewrites) do
-            --    printPatternsSideBySide(v.right)
-            --end
-            ----printPatternsSideBySide(rule.rewrites)
+            if app.viewingHeatmapForRule == -1 then
+                print("viewing per-cycle heatmap for all rules.")
+            else
+                print("viewing heatmap for rule: " .. app.viewingHeatmapForRule)
+                -- wip. what order are those heatmaps in? is the displayed rule the same?
+                -- get the rule
+                local rule = data.rules.table[app.viewingHeatmapForRule]
+                ---- print to console
+                for i, v in ipairs(rule.rewrites) do
+                    local combinedTable = deepCopy(v.right)
+                    table.insert(combinedTable, 1, v.left)
+                    printPatternsSideBySide(combinedTable)
+                end
+            end
         end
         updateImagedata(data.output.imagedata, data.board.table)
         data.output.image:replacePixels(data.output.imagedata)
@@ -302,7 +307,7 @@ function love.mousepressed(x, y, button, istouch, presses)
         if app.viewingCode then
             return
         end
-        local previewBoard = deeperCopy(data.board.table)
+        local previewBoard = deepCopy(data.board.table)
         drawInGrid(previewBoard, x, y, mouseInput)
     end
 end
@@ -314,7 +319,7 @@ function love.mousemoved(x, y, dx, dy, istouch)
         if app.viewingCode then
             return
         end
-        local previewBoard = deeperCopy(data.board.table)
+        local previewBoard = deepCopy(data.board.table)
         drawInGrid(previewBoard, x, y, mouseInput)
     end
 end
@@ -360,20 +365,80 @@ end
 
 -- helper functions
 
-function shallowCopy(orig)
-    local copy = {}
-    for i, v in ipairs(orig) do
-        copy[i] = v
+function printPatternsSideBySide(tables)
+    print()
+    local tallestSize = 0
+    for _, symbol in ipairs(tables) do
+        if type(symbol) ~= "string" then
+            tallestSize = math.max(tallestSize, #symbol)
+        end
     end
-    return copy
+
+    for y = 1, tallestSize do -- for each row, print row of the symbols side by side
+        io.write("   ")
+        for _, symbol in ipairs(tables) do -- each symbol
+            if type(symbol) == "string" then
+                -- keyword
+                if y == 1 then
+                    io.write(symbol)
+                else
+                    -- match the width of the word with spaces underneath
+                    for _ = 1, #symbol do
+                        io.write(" ")
+                    end
+                end
+            else 
+                -- 2d table
+                if type(symbol[1]) ~= "table" then
+                    print("not a 2d table")
+                    return
+                end
+                if y <= #symbol then
+                    for x = 1, #symbol[y] do
+                        local char = symbol[y][x] == 1 and "$$" or symbol[y][x] == 0 and "[]" or ". "
+                        io.write(char)
+                    end
+                else
+                    for _ = 1, #symbol[1] do
+                        io.write("  ")
+                    end
+                end
+            end
+            io.write("  ") -- space between symbols
+        end
+        print()
+    end
 end
 
-function deeperCopy(orig)
-    local copy = {}
-    for i, v in ipairs(orig) do
-        copy[i] = shallowCopy(v)
+function swapAxes(t)
+    local newTable = {}
+    for y = 1, #t[1] do
+        newTable[y] = {}
+        for x = 1, #t do
+            newTable[y][x] = t[x][y]
+        end
     end
-    return copy
+    return newTable
+end
+
+function deepCopy(table)
+    local newTable = {}
+    for i, part in ipairs(table) do
+        if type(part) == "table" then
+            newTable[i] = deepCopy(part)
+        else
+            newTable[i] = part
+        end
+    end
+    return newTable
+end
+
+function shallowCopy(table)
+    local newTable = {}
+    for i, part in ipairs(table) do
+        newTable[i] = part
+    end
+    return newTable
 end
 
 function shiftPattern(table, dx, dy)

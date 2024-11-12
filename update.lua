@@ -97,11 +97,11 @@ function updateBoard(originalBoard, rules)
         return startX, startY
     end
 
-    function turnOffAllHeat(index, heatmapPerInput)
-        for y = 1, #heatmapPerInput do
-            for x = 1, #heatmapPerInput[1] do
-                local binary = heatmapPerInput[y][x]
-                heatmapPerInput[y][x] = bit.band(binary, bit.bnot(bit.lshift(1, index)))
+    function turnOffAllHeat(index, heatmap)
+        for y = 1, #heatmap do
+            for x = 1, #heatmap[1] do
+                local binary = heatmap[y][x]
+                heatmap[y][x] = bit.band(binary, bit.bnot(bit.lshift(1, index)))
             end
         end
     end
@@ -119,7 +119,7 @@ function updateBoard(originalBoard, rules)
 
     function findFirstChangedCell (heatmapPerInput, leftSpread, upSpread)
         -- changes start from the first cell that has heat.
-        local firstChangedX, firstChangedY = findFirstOne(deeperCopy(heatmapPerInput))
+        local firstChangedX, firstChangedY = findFirstOne(deepCopy(heatmapPerInput))
         if firstChangedX then
             -- add padding
             x, y = newStartCoordinate(firstChangedX, firstChangedY, leftSpread, upSpread)
@@ -175,6 +175,25 @@ function updateBoard(originalBoard, rules)
                 lastHitX = 1,
                 lastHitY = 1,
             })
+        end
+
+        -- WIP: heatmap optimization
+        -- not individual rewrites, but the whole rule. at least for now.
+        if app.loopsSinceInput > 0 then
+            -- in later loops, we can skip a bunch of looping by checking if there is some heat in the cell.
+            -- if there isn't, then no rule applied since last time.
+            -- for this to work, we need to turn off the heat for the rule we are about to apply.
+            turnOffAllHeat(i, heatmapPerCycle)
+            local maxWidthOfRewrites = 0 -- wip this doesn't make that much sense, would be better to do this per rewrite.
+            local maxHeightOfRewrites = 0
+            for _, rewrite in ipairs(rewrites) do
+                maxWidthOfRewrites = math.max(maxWidthOfRewrites, rewrite.width)
+                maxHeightOfRewrites = math.max(maxHeightOfRewrites, rewrite.height)
+            end
+            local minChangingX, minChangingY = findFirstChangedCell(heatmapPerCycle, maxWidthOfRewrites, maxHeightOfRewrites) or 1, 1
+            for _, rewrite in ipairs(rewriteStats) do
+                rewrite.lastHitX, rewrite.lastHitY = maxPointInReadingOrder(rewrite.lastHitX, rewrite.lastHitY, minChangingX, minChangingY)
+            end
         end
 
         local moreMatchesPossible = matchesInitialConditions(keywords)
@@ -234,25 +253,6 @@ function updateBoard(originalBoard, rules)
                 totalMisses = totalMisses + stats.misses
             end
         end
-
-        -- WIP: heatmap optimization
-        -- not individual rewrites, but the whole rule. at least for now.
-        if app.loopsSinceInput > 0 then
-            -- in later loops, we can skip a bunch of looping by checking if there is some heat in the cell.
-            -- if there isn't, then no rule applied since last time.
-            -- for this to work, we need to turn off the heat for the rule we are about to apply.
-            turnOffAllHeat(i, heatmapPerCycle)
-            local maxWidthOfRewrites = 0 -- wip this doesn't make that much sense, would be better to do this per rewrite.
-            local maxHeightOfRewrites = 0
-            for _, rewrite in ipairs(rewrites) do
-                maxWidthOfRewrites = math.max(maxWidthOfRewrites, rewrite.width)
-                maxHeightOfRewrites = math.max(maxHeightOfRewrites, rewrite.height)
-            end
-            local minChangingX, minChangingY = findFirstChangedCell(heatmapPerCycle, maxWidthOfRewrites, maxHeightOfRewrites) or 1, 1
-            for _, rewrite in ipairs(rewriteStats) do
-                rewrite.lastHitX, rewrite.lastHitY = maxPointInReadingOrder(rewrite.lastHitX, rewrite.lastHitY, minChangingX, minChangingY)
-            end
-        end
     end
 
     -- reset properties that are only relevant for the current loop
@@ -309,7 +309,11 @@ function updateImagedata(imageData, boardTable)
     for y=0, height-1 do
         local row = boardTable[y+1]
         for x=0, width-1 do
-            if #heatmapPerInput > 0 and app.viewingHeatmapForRule > 0 then
+            if #heatmapPerCycle > 0 and app.viewingHeatmapForRule == -1 then
+                local heatmapBinary = heatmapPerCycle[y+1][x+1]
+                local digit = heatmapBinary > 0 and 0.3 + row[x+1] * 0.5 or row[x+1] 
+                imageData:setPixel(x, y, digit, digit, digit, 1)
+            elseif #heatmapPerInput > 0 and app.viewingHeatmapForRule > 0 then
                 local heatmapBinary = heatmapPerInput[y+1][x+1]
                 local digit = bit.band(bit.rshift(heatmapBinary, app.viewingHeatmapForRule), 1)
                 imageData:setPixel(x, y, digit, row[x+1], row[x+1], 1)
