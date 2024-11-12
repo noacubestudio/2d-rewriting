@@ -5,6 +5,8 @@ Install LÖVE, download the folder and [launch the project](https://love2d.org/w
 It should open with a console that gives some basic feedback. Put a source.png, rules.png, and symbols.png in the same folder.
 
 ## Draw to describe
+![grafik](https://github.com/user-attachments/assets/77a7406a-f3ed-44d9-8f4a-26c5661a3fcb)
+
 The starting board is generated from source.png. It should contain black and white pixels. Gray will turn into either black or white with a 50-50 chance.
 
 The rules are parsed from rules.png.
