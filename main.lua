@@ -323,7 +323,16 @@ function love.keypressed(key, scancode, isrepeat)
 
     elseif key == "up" or key == "down" or key == "left" or key == "right" then
         -- input keys for games, etc.
-        if app.viewingCode then
+        if app.viewingCode or app.paused then
+            app.paused = false
+            print("unpaused.")
+            if app.viewingCode then
+                print("viewing board.")
+                app.viewingCode = false
+                toX, toY = data.board.width, data.board.height
+                setupWindow(toX, toY, app.settings)
+                setupOutput(data)
+            end
             return
         end
 
@@ -419,7 +428,11 @@ function love.mousepressed(x, y, button, istouch, presses)
         app.viewingPreview = true -- is after the restartLoop, so that still saves the undo state.
         app.idle = false
         data.previewBoard.table = deepCopy(data.board.table)
-        drawInGrid(data.previewBoard.table)
+        drawInputRectInBoard(data.previewBoard.table)
+        if app.paused then
+            updateImagedata(data.output.imagedata, data.previewBoard)
+            data.output.image:replacePixels(data.output.imagedata)
+        end
     end
 end
 
@@ -432,7 +445,11 @@ function love.mousemoved(x, y, dx, dy, istouch)
         restartLoop(true)
         app.idle = false
         data.previewBoard.table = deepCopy(data.board.table)
-        drawInGrid(data.previewBoard.table)
+        drawInputRectInBoard(data.previewBoard.table)
+        if app.paused then
+            updateImagedata(data.output.imagedata, data.previewBoard)
+            data.output.image:replacePixels(data.output.imagedata)
+        end
     end
 end
 
@@ -450,7 +467,7 @@ function love.mousereleased(x, y, button, istouch, presses)
         app.input.editedState = true
         print()
         print("drawing in grid.")
-        drawInGrid(data.board.table)
+        drawInputRectInBoard(data.board.table)
     end
     app.input.startX, app.input.startY = nil, nil
 end
@@ -463,20 +480,19 @@ function mouseToCoordinate(x, y)
     return x, y
 end
 
-function drawInGrid(grid)
+function drawInputRectInBoard(board)
     local startX = app.input.startX or app.input.x
     local startY = app.input.startY or app.input.y
     local endX, endY = app.input.x, app.input.y
     if startX == endX and startY == endY then 
-        grid[app.input.y][app.input.x] = app.input.brushColor
+        board[app.input.y][app.input.x] = app.input.brushColor
     else 
         for i = math.min(startY, endY), math.max(startY, endY) do
             for j = math.min(startX, endX), math.max(startX, endX) do
-                if i > 0 and j > 0 then grid[i][j] = app.input.brushColor end
+                if i > 0 and j > 0 then board[i][j] = app.input.brushColor end
             end
         end
     end
-    local board = app.paused and data.previewBoard.table or data.board.table
 end
 
 

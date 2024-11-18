@@ -214,8 +214,14 @@ function updateBoard(boardData, rules)
                 if rewrite.left and rewrite.right and moreMatchesPossible then
                     local stats = rewriteStats[r]
                     if (stats.hits > 0 ) then
-                        -- had a match already! this means all rewrites had a match.
-                        allRewritesHadMatches = true
+                        if stats.hits + stats.misses > 9999999 then
+                            moreMatchesPossible = false
+                            print("too many misses, stopping.")
+                            app.idle = true
+                        else
+                            -- had a match already! this means all rewrites had a match.
+                            allRewritesHadMatches = true
+                        end
                     end
 
                     -- find a match
