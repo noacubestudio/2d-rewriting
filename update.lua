@@ -1,16 +1,15 @@
 -- update board and output image data
 
-local heatmapPerCycle = {}
-local heatmapPerInput = {}
+-- WIP TODO: fix the heatmap display and enable the optimization again.
 
-function updateBoard(originalBoard, rules)
+function updateBoard(boardData, rules)
 
     function matchesInitialConditions(keywords)
         local matching = true
         for _, keyword in ipairs(keywords) do
             if string.find(keyword, "input_") then
                 local directionKey = string.sub(keyword, 7)
-                if app.lastInputKey ~= directionKey then
+                if app.input.key ~= directionKey then
                     matching = false
                     break
                 end
@@ -65,7 +64,7 @@ function updateBoard(originalBoard, rules)
         return nil, nil, misses -- No match found
     end
 
-    function replaceSubPattern(source_pattern, replacement_options, x, y, ruleIndex)
+    function replaceSubPattern(source_pattern, replacement_options, x, y, ruleIndex, heatmaps)
         -- choose a random replacement from the options
         local sub_pattern = replacement_options[love.math.random(1, #replacement_options)]
         local sub_rows = #sub_pattern
@@ -80,8 +79,9 @@ function updateBoard(originalBoard, rules)
                 -- indicate that the rule was applied here on the heatmapPerInput.
                 -- set binary digit to 1 that corrensponds to index, so we can see which rules were applied where. other digits stay.
                 --TODO WIP fix this - it should probably be per rewrite, not per rule.
-                heatmapPerInput[y + suby - 1][x + subx - 1] = bit.bor(heatmapPerInput[y + suby - 1][x + subx - 1], bit.lshift(1, ruleIndex))
-                heatmapPerCycle[y + suby - 1][x + subx - 1] = bit.bor(heatmapPerCycle[y + suby - 1][x + subx - 1], bit.lshift(1, ruleIndex))
+                --for _, heatmap in ipairs(heatmaps) do
+                --    heatmap[y + suby - 1][x + subx - 1] = bit.bor(heatmap[y + suby - 1][x + subx - 1], bit.lshift(1, ruleIndex))
+                --end
             end
         end
     end
@@ -123,7 +123,9 @@ function updateBoard(originalBoard, rules)
         if firstChangedX then
             -- add padding
             x, y = newStartCoordinate(firstChangedX, firstChangedY, leftSpread, upSpread)
-            return x, y
+            -- wip
+            return 1, 1
+            --return x, y
         end
     end
 
@@ -138,12 +140,14 @@ function updateBoard(originalBoard, rules)
 
 
     local madeChange = false
-    local newBoard = shallowCopy(originalBoard) -- copy the before board to modify it
+    local newBoard = shallowCopy(boardData.table) -- copy the before board to modify it
+    local heatmapPerCycle = boardData.lastChanges or {}
+    local heatmapPerInput = boardData.heatmap or {}
 
     -- initialize heatmaps. one is for the whole time, the other is for the last loop.
     -- the former is a nice visual representation of which rules were applied where.
     -- the latter is used to skip checking positions that didn't change since the last loop.
-    if app.loopsSinceInput == 0 then
+    if app.input.totalLoops == 0 then
         heatmapPerInput = {}
         heatmapPerCycle = {}
         for y = 1, #newBoard do
@@ -157,11 +161,13 @@ function updateBoard(originalBoard, rules)
         print("   loop start. rewrites per turn:")
         io.write("<> ")
     end
+    
 
     local totalHits = 0
     local totalMisses = 0
     for i, rule in ipairs(rules) do
 
+        --local startTime = love.timer.getTime()
         local rewrites = rule.rewrites
         local keywords = rule.keywords
         -- WIP TODO
@@ -179,7 +185,7 @@ function updateBoard(originalBoard, rules)
 
         -- WIP: heatmap optimization
         -- not individual rewrites, but the whole rule. at least for now.
-        if app.loopsSinceInput > 0 then
+        if app.input.totalLoops > 0 then
             -- in later loops, we can skip a bunch of looping by checking if there is some heat in the cell.
             -- if there isn't, then no rule applied since last time.
             -- for this to work, we need to turn off the heat for the rule we are about to apply.
@@ -236,7 +242,8 @@ function updateBoard(originalBoard, rules)
                     local stats = rewriteStats[r]
                     if stats.hits > 0 then
                         local currentRuleIndex = i
-                        replaceSubPattern(newBoard, rewrite.right, stats.lastHitX, stats.lastHitY, currentRuleIndex)
+                        local heatmaps = {heatmapPerInput, heatmapPerCycle}
+                        replaceSubPattern(newBoard, rewrite.right, stats.lastHitX, stats.lastHitY, currentRuleIndex, heatmaps)
                         -- change coordinates for the next match.
                         -- need to find the last cell that has no overlap with the change we just made.
                         stats.lastHitX, stats.lastHitY = newStartCoordinate(stats.lastHitX, stats.lastHitY, rewrite.width, rewrite.height)
@@ -253,22 +260,25 @@ function updateBoard(originalBoard, rules)
                 totalMisses = totalMisses + stats.misses
             end
         end
+
+        -- profiling
+        --print(love.timer.getTime() - startTime)
     end
 
     -- reset properties that are only relevant for the current loop
-    app.lastInputKey = nil -- reset the input key so we can check again next time
+    app.input.key = nil -- reset the input key so we can check again next time
 
     -- replace the original board with the new one
     if totalHits > 0 then
         for y = 1, #newBoard do
-            originalBoard[y] = newBoard[y]
+            boardData.table[y] = newBoard[y]
         end
         io.write(totalHits .. " ")
         return true, totalHits, totalMisses
     end
 
-    io.write(totalHits .. " ")
-    print()
+    io.write(totalHits)
+    if not app.viewingPreview then print(" ") end
 
     return false, totalHits, totalMisses
 end
@@ -296,16 +306,18 @@ function updatePallette()
     palette[2] = {love.math.random(200, 255)/255, love.math.random(200, 255)/255, love.math.random(200, 255)/255}
 end
 
-function updateImagedata(imageData, boardTable)
+function updateImagedata(imageData, boardData)
     if app.viewingCode then
         -- TODO WIP, turn the rules data back into an image? would allow for some interesting visualizations.
         -- However it seems important to keep the color etc. as they were.
         -- Right now, the rule image can not be edited.
         return
     end
+    local boardTable = boardData.table
     local width = imageData:getWidth()
     local height = #boardTable
-
+    local heatmapPerCycle = boardData.lastChanges or {}
+    local heatmapPerInput = boardData.heatmap or {}
     for y=0, height-1 do
         local row = boardTable[y+1]
         for x=0, width-1 do
@@ -327,7 +339,7 @@ function updateImagedata(imageData, boardTable)
             else
                 local color = palette[row[x+1]+1]
                 -- increase randomness with loop count
-                local randomness = math.min(app.loopsSinceInput * 0.002, 0.2)
+                local randomness = math.min(app.input.totalLoops * 0.002, 0.2)
                 local noise = not (app.editing or app.paused or app.idle) and 1-randomness + love.math.random() * randomness or 1
                 imageData:setPixel(x, y, 
                     color[1] * noise, 

@@ -12,32 +12,37 @@ app = {
     error = false,
     viewingCode = false,
     viewingHeatmapForRule = 0, 
+    viewingPreview = false,
     focused = true,
     printing = false,
 
     -- on each input
-    lastInputKey = nil,
-    loopsSinceInput = 0,
-    hitsSinceInput = 0,
-    missesSinceInput = 0,
+    input = {
+        totalLoops = 0,
+        totalChanges = 0,
+        totalChecks = 0,
+        -- key input
+        key = nil,
+        -- mouse input
+        x = 0,
+        y = 0,
+        startX = nil,
+        startY = nil,
+        brushColor = 0,
+        editedState = false,
+    },
 
     -- update loop
     timeSinceLastUpdate = 0,
-    updateInterval = 0.1, --0.05,
 
     -- settings. defaults before being rewritten by settings.lua
     settings = {
+        updateInterval = 0.1, -- seconds
         pixelScale = 4,
         windowX = nil,
         windowY = nil,
         logRules = false,
     },
-}
-
-local mouseInput = {
-    startX = 0,
-    startY = 0,
-    brushColor = 0,
 }
 
 local data = {
@@ -50,6 +55,8 @@ local data = {
         imageHash = 0,
         width = 0,
         height = 0,
+        heatmap = {}, -- for each rule
+        lastChanges = {}, -- for each rule
     },
     rules = {
         table = {}, -- the rules
@@ -73,27 +80,49 @@ local data = {
         width = 0,
         height = 0,
     },
+    previewBoard = {
+        table = {}, -- the preview board for editing
+        -- matches the normal board.
+        lastChanges = {}, -- for each rule
+    },
+    undo = {
+        table = {}, -- the undo board
+        -- matches the normal board.
+    },
 }
 
 function love.load() 
+    local cursor = love.mouse.getSystemCursor("crosshair")
+    love.mouse.setCursor(cursor)
     loadSettings(app.settings, "settings.lua")
     loadImages(data)
 end
 
 function restartLoop()
-    if app.loopsSinceInput > 0 then
-        app.loopsSinceInput = 0
-        print("restarted loop and heatmap.")
+    if (app.editing or app.input.key) and not app.viewingPreview then
+        print("saving previous state for undo.")
+        data.undo.table = deepCopy(data.board.table)
+        --printPatternsSideBySide({data.undo.table})
     end
+    if app.input.totalLoops > 0 then
+        app.input.totalLoops = 0
+        app.input.editedState = false
+        if app.viewingPreview then
+            io.write(", ")
+        else
+            print("reset loop counters.")
+        end
+    end
+    app.input.totalChanges, app.input.totalChecks = 0, 0
 end
 
 function love.update(dt)
 
-    -- update every <updateInterval> seconds
+    -- update every <settings.updateInterval> seconds
     local updateNow = false
     app.timeSinceLastUpdate = app.timeSinceLastUpdate + dt
-    if app.timeSinceLastUpdate > app.updateInterval then
-        app.timeSinceLastUpdate = app.timeSinceLastUpdate - app.updateInterval
+    if app.timeSinceLastUpdate > app.settings.updateInterval then
+        app.timeSinceLastUpdate = app.timeSinceLastUpdate - app.settings.updateInterval
         updateNow = true
     end
 
@@ -120,25 +149,52 @@ function love.update(dt)
     -- state is shown and unpaused and not idle (more potential changes to be made)
     if updateNow then
         -- new state, apply rules once
-        local madeChanges, hits, misses = updateBoard(data.board.table, data.rules.table)
-        app.loopsSinceInput = app.loopsSinceInput + 1
-        app.hitsSinceInput = app.hitsSinceInput + hits
-        app.missesSinceInput = app.missesSinceInput + misses
-        -- print("turn " .. app.loopsSinceInput .. ".")
-        if not madeChanges then
+        local boardData = app.editing and data.previewBoard or data.board
+        local madeChanges, hits, misses = updateBoard(boardData, data.rules.table)
+
+        app.input.totalLoops = app.input.totalLoops + 1
+        app.input.totalChanges = app.input.totalChanges + hits
+        app.input.totalChecks = app.input.totalChecks + misses
+
+        if #data.undo.table > 0 and patternsEqual(boardData.table, data.undo.table) and not app.editing then
+            print("")
+            print("   no visible changes!")
             app.idle = true
-            print("   idle after " .. app.loopsSinceInput .. " turns.")
-            print("   total: " .. app.hitsSinceInput .. "/" .. app.missesSinceInput + app.hitsSinceInput .. " matches.")
-            print("   hit rate is " ..  string.format("%.3f", (app.hitsSinceInput / (app.missesSinceInput + app.hitsSinceInput)) * 100)  .. "%.")
-            print()
-            app.hitsSinceInput, app.missesSinceInput = 0, 0
+            printResults(app.input.totalLoops, app.input.totalChanges, app.input.totalChecks)
+            app.input.totalChanges = 0
+            return
+        end
+
+        if not madeChanges then
+            -- no changes made, so we're done.
+            app.idle = true
+            printResults(app.input.totalLoops, app.input.totalChanges, app.input.totalChecks)
             -- no return here, so the image is still updated once more.
             -- this can be used for (resetting) visual effects.
+            -- totals are reset when a new input is made.
         end
         -- update image
-        updateImagedata(data.output.imagedata, data.board.table)
+        updateImagedata(data.output.imagedata, boardData)
         data.output.image:replacePixels(data.output.imagedata)
     end
+end
+
+function printResults(loops, changes, checks, interrupted)
+    if app.viewingPreview then
+        return
+    end
+    local message = interrupted and "interrupted by input key" or "finished"
+    print("   " .. message .. " after " .. loops .. " turns.")
+    if changes > 0 then
+        print("   total: " .. changes .. " / " .. checks + changes .. " match.")
+        --print("   hit rate is " ..  string.format("%.3f", (changes / (checks + changes)) * 100)  .. "%.")
+        local pixelCount = data.board.width * data.board.height
+        print("   avg pixel: " .. string.format("%.3f", changes / pixelCount)
+            .. " / " .. string.format("%.3f", (checks + changes) / pixelCount) .. " match.")
+    elseif not app.editing then
+        print("   no changes made.")
+    end
+    print()
 end
 
 function love.draw()
@@ -147,11 +203,28 @@ function love.draw()
     -- draw output image using the scale. matches window size.
     love.graphics.scale(app.settings.pixelScale, app.settings.pixelScale)
     love.graphics.draw(data.output.image, 0, 0)
-    love.graphics.reset()
 
-    --love.graphics.setColor(1, 0, 0)
-    --love.graphics.print("FPS: "..tostring(love.timer.getFPS( )), 0, 0)
-    
+    -- bounding box for editing
+    if app.focused and love.mouse.getX() > 0 and love.mouse.getY() > 0 then
+        local x, y = mouseToCoordinate(love.mouse.getX(), love.mouse.getY())
+        if x > 0 and y > 0 and x <= data.output.imagedata:getWidth() and y <= data.output.imagedata:getHeight() then
+            if app.editing then 
+                love.graphics.setColor(1, 0, 0)
+            else 
+                love.graphics.setColor(0, 0.5, 1)
+            end
+            love.graphics.setLineWidth(1/app.settings.pixelScale)
+            local x, y = app.input.x, app.input.y
+            local startX, startY = app.input.startX, app.input.startY
+            if startX == nil or startY == nil then
+                love.graphics.rectangle("line", x - 1, y - 1, 1, 1)
+            else
+                love.graphics.rectangle("line", math.min(x, startX) - 1, math.min(y, startY) - 1, math.abs(x - startX) + 1, math.abs(y - startY) + 1)
+            end
+        end
+    end
+
+    love.graphics.reset()
     love.graphics.setColor(1, 1, 1)
 end
 
@@ -180,7 +253,7 @@ function love.keypressed(key, scancode, isrepeat)
         app.viewingHeatmapForRule = 0
        
         -- output one more time, to show if paused or not
-        updateImagedata(data.output.imagedata, data.board.table)
+        updateImagedata(data.output.imagedata, data.board)
         data.output.image:replacePixels(data.output.imagedata)
 
     elseif key == "r" and not app.viewingCode then
@@ -192,6 +265,24 @@ function love.keypressed(key, scancode, isrepeat)
         app.settings.windowX, app.settings.windowY = love.window.getPosition()
         setupWindow(data.board.width, data.board.height, app.settings)
         setupOutput(data) 
+
+    elseif key == "u" and not app.viewingCode then
+        -- undo
+        if #data.undo.table > 0 and (app.input.totalChanges > 0 or app.input.editedState) then
+            print("undoing last turn.")
+            updatePallette()
+            app.timeSinceLastUpdate = 0
+            --
+            data.board.table = deepCopy(data.undo.table)
+            updateImagedata(data.output.imagedata, data.board)
+            data.output.image:replacePixels(data.output.imagedata)
+            app.input.totalLoops = 0
+            app.input.totalChanges = 0
+            app.input.totalChecks = 0
+            app.input.editedState = false
+        else
+            print("no changes to undo.")
+        end
     
     elseif key == "l" then
         -- reload symbols, board and rules
@@ -206,14 +297,14 @@ function love.keypressed(key, scancode, isrepeat)
         print("saving image")
 
         app.printing = true
-        updateImagedata(data.output.imagedata, data.board.table)
+        updateImagedata(data.output.imagedata, data.board)
 
         local fileData = data.output.imagedata:encode("png", "output.png")
         love.filesystem.write("output.png", fileData)
         print("image saved as output.png in path: " .. love.filesystem.getSaveDirectory())
 
         app.printing = false
-        updateImagedata(data.output.imagedata, data.board.table)
+        updateImagedata(data.output.imagedata, data.board)
     
     elseif key == "tab" then
         -- switch between rule and board display
@@ -236,12 +327,20 @@ function love.keypressed(key, scancode, isrepeat)
             return
         end
 
-        app.lastInputKey = key -- for this next update, access the last key pressed. reset in the update fn
-        print("input key: " .. key)
+        app.input.key = key -- for this next update, access the last key pressed. reset in the update fn.
 
-        restartLoop()
-        app.timeSinceLastUpdate = 0
-        app.idle = false
+        if app.idle then
+            print("INPUT KEY: " .. key)
+            restartLoop()
+            app.timeSinceLastUpdate = 0
+            app.idle = false
+        else
+            print()
+            printResults(app.input.totalLoops, app.input.totalChanges, app.input.totalChecks, true)
+            print("INPUT WHILE LOOPING: " .. key)
+            restartLoop()
+            app.timeSinceLastUpdate = 0
+        end
 
     elseif key == "1" or key == "2" then
         -- show different heatmaps over the state that represent where each rule matched since last input
@@ -273,7 +372,8 @@ function love.keypressed(key, scancode, isrepeat)
                 end
             end
         end
-        updateImagedata(data.output.imagedata, data.board.table)
+        --print(#data.board.heatmap, #data.board.lastChanges)
+        updateImagedata(data.output.imagedata, data.board)
         data.output.image:replacePixels(data.output.imagedata)
     else
         --print("key pressed: " .. key)
@@ -282,6 +382,13 @@ end
 
 -- scroll
 function love.wheelmoved(x, y)
+
+    --when holding shift, change update interval
+    if love.keyboard.isDown("lshift") then
+        app.settings.updateInterval = math.max(0.01, app.settings.updateInterval + y * 0.01)
+        print("update interval: " .. app.settings.updateInterval)
+        return
+    end
 
     -- first get position of window
     app.settings.windowX, app.settings.windowY = love.window.getPosition()
@@ -298,29 +405,34 @@ function love.wheelmoved(x, y)
 end
 
 function love.mousepressed(x, y, button, istouch, presses)
-    mouseInput.brushColor = button == 1 and 0 or 1
+    app.input.brushColor = button == 1 and 0 or 1
     if button == 1 or button == 2 then
         app.editing = true
-        local x, y = mouseToCoordinate(x, y)
-        mouseInput.startX, mouseInput.startY = x, y
+        app.input.x, app.input.y = mouseToCoordinate(x, y)
+        app.input.startX, app.input.startY = app.input.x, app.input.y
+        print("editing at " .. app.input.x .. ", " .. app.input.y .. " with color " .. app.input.brushColor)
 
         if app.viewingCode then
             return
         end
-        local previewBoard = deepCopy(data.board.table)
-        drawInGrid(previewBoard, x, y, mouseInput)
+        restartLoop()
+        app.viewingPreview = true -- is after the restartLoop, so that still saves the undo state.
+        app.idle = false
+        data.previewBoard.table = deepCopy(data.board.table)
+        drawInGrid(data.previewBoard.table)
     end
 end
 
 function love.mousemoved(x, y, dx, dy, istouch)
+    app.input.x, app.input.y = mouseToCoordinate(x, y)
     if love.mouse.isDown(1) or love.mouse.isDown(2) then
-        local x, y = mouseToCoordinate(x, y)
-
         if app.viewingCode then
             return
         end
-        local previewBoard = deepCopy(data.board.table)
-        drawInGrid(previewBoard, x, y, mouseInput)
+        restartLoop(true)
+        app.idle = false
+        data.previewBoard.table = deepCopy(data.board.table)
+        drawInGrid(data.previewBoard.table)
     end
 end
 
@@ -328,14 +440,19 @@ function love.mousereleased(x, y, button, istouch, presses)
     if button == 1 or button == 2 then
         app.editing = false
         app.idle = false
-        local x, y = mouseToCoordinate(x, y)
+        app.viewingPreview = false
+        app.input.x, app.input.y = mouseToCoordinate(x, y)
 
         if app.viewingCode then
             return
         end
-        drawInGrid(data.board.table, x, y, mouseInput)
+        --app.input.totalChanges = app.input.totalChanges + 1
+        app.input.editedState = true
+        print()
+        print("drawing in grid.")
+        drawInGrid(data.board.table)
     end
-    mouseInput.startX, mouseInput.startY = 0, 0
+    app.input.startX, app.input.startY = nil, nil
 end
 
 function mouseToCoordinate(x, y)
@@ -346,20 +463,20 @@ function mouseToCoordinate(x, y)
     return x, y
 end
 
-function drawInGrid(grid, endX, endY, mouseInput)
-    local startX, startY = mouseInput.startX, mouseInput.startY
-    if startX == x and startY == y then 
-        grid[y][x] = mouseInput.brushColor
+function drawInGrid(grid)
+    local startX = app.input.startX or app.input.x
+    local startY = app.input.startY or app.input.y
+    local endX, endY = app.input.x, app.input.y
+    if startX == endX and startY == endY then 
+        grid[app.input.y][app.input.x] = app.input.brushColor
     else 
         for i = math.min(startY, endY), math.max(startY, endY) do
             for j = math.min(startX, endX), math.max(startX, endX) do
-                if i > 0 and j > 0 then grid[i][j] = mouseInput.brushColor end
+                if i > 0 and j > 0 then grid[i][j] = app.input.brushColor end
             end
         end
     end
-    restartLoop()
-    updateImagedata(data.output.imagedata, grid)
-    data.output.image:replacePixels(data.output.imagedata)
+    local board = app.paused and data.previewBoard.table or data.board.table
 end
 
 

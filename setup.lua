@@ -11,15 +11,13 @@ function loadSettings(settings, filename)
     local loadedSettings = TSerial.unpack(contents, true)
     if loadedSettings == nil then return end
 
-    for key, value in pairs(loadedSettings) do
-        settings[key] = value
-    end
     print("loaded " .. filename)
     print()
-    print("    pixelScale: " .. settings.pixelScale)
-    print("    windowX: " .. settings.windowX)
-    print("    windowY: " .. settings.windowY)
-    print("    logRules: " .. tostring(settings.logRules))
+    for key, value in pairs(loadedSettings) do
+        settings[key] = value
+        print("    " .. key .. ": " .. tostring(value))
+    end
+
     print()
 end
 
@@ -97,7 +95,7 @@ function setupOutput(data)
         -- show board, make initial edits. (gray turns into 1 or 0)
         data.output.imagedata = data.board.imagedata:clone()
         data.board.table = parseBoardImage(data.output.imagedata)
-        updateImagedata(data.output.imagedata, data.board.table)
+        updateImagedata(data.output.imagedata, data.board)
 
         -- start looping
         app.idle = false
@@ -152,14 +150,13 @@ function updateTitle(data)
     elseif app.paused then
         title = title .. " - paused (space to resume)"
     elseif app.editing then
-        --title = title .. " - editing"
+        title = title .. " - left: black, right: white"
     elseif app.viewingHeatmapForRule > 0 then
         title = title .. " - showing pixels changed by rule " .. app.viewingHeatmapForRule .. " (of " .. #data.rules.table .. ")"
     elseif app.viewingHeatmapForRule == -1 then
         title = title .. " - global heatmap of current cycle"
-    elseif app.hitsSinceInput > 0 then
-        local appliedCount = app.hitsSinceInput
-        title = title .. " - " .. appliedCount .. " changes..."
+    elseif app.input.totalChanges > 0 then
+        title = title .. " - " .. app.input.totalChanges .. " changes..."
     end
 
     love.window.setTitle(title)
