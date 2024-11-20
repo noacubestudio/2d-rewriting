@@ -150,7 +150,8 @@ function love.update(dt)
     if updateNow then
         -- new state, apply rules once
         local boardData = app.editing and data.previewBoard or data.board
-        local madeChanges, hits, misses = updateBoard(boardData, data.rules.table)
+        --local madeChanges, hits, misses = updateBoard(boardData, data.rules.table)
+        local hits, misses = updateBoardNew(boardData, data.rules.table)
 
         app.input.totalLoops = app.input.totalLoops + 1
         app.input.totalChanges = app.input.totalChanges + hits
@@ -165,7 +166,7 @@ function love.update(dt)
             return
         end
 
-        if not madeChanges then
+        if hits == 0 then
             -- no changes made, so we're done.
             app.idle = true
             printResults(app.input.totalLoops, app.input.totalChanges, app.input.totalChecks)
@@ -184,6 +185,7 @@ function printResults(loops, changes, checks, interrupted)
         return
     end
     local message = interrupted and "interrupted by input key" or "finished"
+    print()
     print("   " .. message .. " after " .. loops .. " turns.")
     if changes > 0 then
         print("   total: " .. changes .. " / " .. checks + changes .. " match.")
