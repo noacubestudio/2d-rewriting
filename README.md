@@ -1,23 +1,50 @@
-Early work-in-progress, better documentation and examples will be added later.
 
-## Get started
+> [!IMPORTANT]
+> This is an early work-in-progress!
 
-Install LÖVE, download the folder and [launch the project](https://love2d.org/wiki/Getting_Started).
-It should open two windows:
+
+## Getting started
+
+### Requirements
+
+1. Install [LÖVE][love2d]
+2. Clone this repo locally
+3. See [this wiki](https://love2d.org/wiki/Getting_Started) for platform-specific launch instructions
+
+Once you've figured out your launch command, try running the project. It should open two windows:
 
 1. A console which logs basic info during run
 2. The application window
 
+[love2d]: https://love2d.org/
 
-### Loading
+### Preparing the Example Files
 
-Download the files in the `example` folder of this repo:
+Copy the files from the `example` folder to the root of this repo:
+
+```
+cp example/*.png .
+```
+
+They do the following:
 
 | File              | Purpose                                      |
 |-------------------|----------------------------------------------|
 | `source.png`      | Initial board state as black & white pixels. |
 | `rules.png`       | The rewriting rules used each step           |
 | `symbols.png`     | The symbol patterns (see below)              |
+
+### Running
+
+Launch the project. For example, if you are on Linux and using the appimage version of [LÖVE][love2d], you might do the following:
+
+```
+love-11.5-x86_64.AppImage .
+```
+
+The example code currently produces a line like this:
+
+![Example pattern output](./pattern.png)
 
 ### Basic Controls
 
