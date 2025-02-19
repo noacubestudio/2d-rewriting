@@ -49,7 +49,7 @@ The example code currently produces a line like this:
 ### Basic Controls
 
 * The arrow keys provide input while
-* The space toggles bar toggles pause
+* The space bar toggles pause
 * The `R` key reloads the intial state
 * The escape key quits
 
@@ -91,14 +91,14 @@ The graphics for each "keyword" below will be loaded from `symbols.png`, startin
 
 | Keyword         | Action                                          |
 |-----------------|-------------------------------------------------|
-| rotate          | Create all 4 rotations for the rest of the rule |
-| flip horizontal | Creates both versions                           |
-| flip vertical   | Creates both versions                           |
+| Rotate          | Create all 4 rotations for the rest of the rule |
+| Flip horizontal | Creates both versions                           |
+| Flip vertical   | Creates both versions                           |
 | Lock to grid    | *Currently not supported*                       |
-| input right     | Matches user input of the right arrow           |
-| input down      | Matches user input of the down arrow            |
-| input left      | Matches user input of the left arrow            |
-| input up        | Matches user input of the up arrow              |
+| Input right     | Matches user input of the right arrow           |
+| Input down      | Matches user input of the down arrow            |
+| Input left      | Matches user input of the left arrow            |
+| Input up        | Matches user input of the up arrow              |
 
 It is useful to make the input symbols rotated versions of each other since a rotate keyword in front then rotates them in the rule before they are parsed.
 This alos applies to the horizontal and vertical flip symbols. If you don't want a keyword to mess with another, make the latter entirely symmetrical. A more elaborate system with more control may be added later...
@@ -137,7 +137,7 @@ The heatmap visualizations wrap around at the start / end.
 * All heatmap visualizations other than the last show rewrites using each rule since last player input
 * The last shows where rules apply in real-time. 
 
-[^1]: The appdata folder also contains a settings.lua. Toggle the `logRules` setting if you want to see how rules are parsed in the console. It uses `$$` for white, `[]` for black, `..` for wildcard and single `;` to separate rewrites in the same rule.
+[^1]: The program will also try to read from any `settings.lua` in the appdatqa folder. Toggle the `logRules` setting if you want to see how rules are parsed in the console. It uses `$$` for white, `[]` for black, `..` for wildcard and single `;` to separate rewrites in the same rule.
 
 [^2]: The rules view is currently incomplete and will be interactive later.
 
