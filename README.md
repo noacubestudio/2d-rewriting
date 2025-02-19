@@ -42,13 +42,13 @@ Launch the project. For example, if you are on Linux and using the appimage vers
 love-11.5-x86_64.AppImage .
 ```
 
-The example code currently produces a line like this:
+The example `rules.png` and `source.png` currently produce a graphic like this:
 
 ![Example pattern output](./pattern.png)
 
 ### Basic Controls
 
-* The arrow keys provide input while
+* The arrow keys provide input while running
 * The space bar toggles pause
 * The `R` key reloads the intial state
 * The escape key quits
@@ -63,30 +63,49 @@ Controls are listed in greater depth in the [Controls](#controls) section below.
 
 The initial board state will be loaded from `source.png`.
 
-The image should contain only grayscale pixels (zero saturaion / chroma):
+The image should contain only grayscale pixels (zero saturation / chroma):
 
 * Black or white pixels are read as their literal value
-* Grays will be converted to either black or white with a 50-50 chance
+* Grays will be converted to either black or white with a 50-50 chance each run
 
 ### Rules
 
 The rules are parsed from `rules.png`.
+Use an image editor/ pixel art software to edit the rules.
 
-Each rule replaces the pattern on the left with the one on the right as follows:
+Each rule replaces the pattern on the left with the one(s) on the right as follows:
 
 1. Pixels with any color saturation (chroma) are ignored and can be used as comments
-2. Patterns of black and white pixels are used to search the board and replace them
+2. Patterns of black and white pixels are used to search the board and replace matching areas
 3. Gray pixels are wildcards
-4. Rules with multiple options on the right will be chosen from at random
-5. Gaps of one or more pixels separate rules and can be of any width
+4. A rule needs at least two patterns: where the left is found, it is replaced with the right 
+5. Multiple options on the right of a pattern will be chosen from at random
+
+Rules are arranged in rows and read from left to right like text.
+* Gaps of any width that contain no grayscale pixels separate a rule into patterns
+* Gaps of any height that contain no grayscale pixels separate rules from other rules
 
 #### Advanced Rules
 
-To combine multiple rewrites in a single rule (where all have to match), one way would be to make their dimensions distinct.
-Images in the row that are not the same dimensions as the ones to the left and right of them are not rewrites, but keywords that modify the remaining rule (or are used while the rules run). If the image does not match a keyword, it is simply removed. This is why you can use a single black or white pixel to separate multiple rewrite rules that are, say, all 5x5 px patterns.
+Special patterns (symbols or "keywords" as described next section) modify the rule they are in. 
+A rule can contain multiple search patterns and replacements, where all have to match at once.
+The parser groups patterns and special symbols in a rule based on their dimensions.
+
+For example, a rule that changes A to B, and C to D, where all of these patterns are 5 x 5 pixels, can look like this:
+
+```
+..#.. ####.   .###. ####. 
+.#.#. #...#   #...# #...#
+#...# ####. # #.... #...#
+##### #...#   #...# #...#
+#...# ####.   .###. ####. 
+```
+
+The single pixel in between acts as a spacer, otherwise the rule would replace A with B, C or D at random.
 
 ### Symbols
 
+Single patterns (no 'right side'/ replacement patterns provided) are either ignored or parsed as a "keyword". You can decide what the keywords look like.
 The graphics for each "keyword" below will be loaded from `symbols.png`, starting from the top of the image. The keywords will be loaded in descending order as shown below:
 
 | Keyword         | Action                                          |
@@ -100,8 +119,13 @@ The graphics for each "keyword" below will be loaded from `symbols.png`, startin
 | Input left      | Matches user input of the left arrow            |
 | Input up        | Matches user input of the up arrow              |
 
-It is useful to make the input symbols rotated versions of each other since a rotate keyword in front then rotates them in the rule before they are parsed.
-This alos applies to the horizontal and vertical flip symbols. If you don't want a keyword to mess with another, make the latter entirely symmetrical. A more elaborate system with more control may be added later...
+The rotate and flip keywords apply to the rest of the rule, as it is being parsed, and expand one rule into multiple (for each direction).
+Because the patterns to the right are not parsed at that point, a keyword can modify any pattern to its right that is actually meant to be another keyword!
+
+For this reason, I recommend making the rotate symbol itself rotationally symmetrical and immune to flipping.
+I also recommend making the flip keywords immune to flipping, so you can combine these keywords in any order.
+To make a moving player with a single rule, you can prefix it with the rotate keyword followed by one of the input keywords, assuming those use the same rotated pattern!
+
 
 ## Controls
 
