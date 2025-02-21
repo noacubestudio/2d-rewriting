@@ -32,11 +32,15 @@ function parseBoardImage(imageData)
 end
 
 
--- parse builtins image data to return a list of builtin symbols
+-- parse macro image data to return a list of builtin symbols to be used in the rules.
 -- each row corresponds to a symbol name. the symbols are parsed as 2D tables of 1s and 0s.
--- multiple patterns can be associated with a single symbol name.
 
-function parseSymbolsImage(imageData)
+local function getIOSymbol(index)
+    local options = {"load", "save", "up", "right", "down", "left", "loop"}
+    return options[index]
+end
+
+function parseMacrosImage(imageData)
     
     local height = imageData:getHeight()
     local width = imageData:getWidth()
@@ -71,26 +75,22 @@ function parseSymbolsImage(imageData)
     --printPatternsSideBySide(symbols)
 
     -- turn the symbols into names
-    local keywords = {
+    local macros = {
         rotate = symbols[1] or nil,
         flipH  = symbols[2] or nil,
         flipV  = symbols[3] or nil,
         grid   = symbols[4] or nil,
-        input_right = symbols[5] or nil,
-        input_down = symbols[6] or nil,
-        input_left = symbols[7] or nil,
-        input_up = symbols[8] or nil,
     }
     -- print which are not nil
-    io.write("   keywords: ")
-    for keyword, symbol in pairs(keywords) do
+    io.write("   macros: ")
+    for keyword, symbol in pairs(macros) do
         if symbol then
             io.write(keyword, "(", #symbol, "x", #symbol[1], ") ")
         end
     end
     print()
     print()
-    return keywords
+    return macros
 end
 
 
@@ -111,10 +111,11 @@ end
 
 function parseRulesImage(rulesData, symbolData)
     
+    local parsingIO = not symbolData
     local imageData = rulesData.imagedata
     local height = rulesData.height
     local width = rulesData.width
-    print("parsing rules image, " .. width .. "x" .. height)
+    print((parsingIO and "parsing io rules, " or "parsing rules image, ") .. width .. "x" .. height)
     print()
 
     -- go down the image and find where rules start and stop. 
@@ -214,7 +215,7 @@ function parseRulesImage(rulesData, symbolData)
     -- this also applies to following symbols themselves, which might be rotated or mirrored before being parsed.
     -- builtin keywords expand the rules to all specified combinations, so this creates new rules.
 
-    local function expandRule(ruleBefore)
+    local function expandRule(ruleBefore, originalIndex)
 
         -- convert individual patterns to symbols if they match the builtin list of symbols.
 
@@ -345,7 +346,14 @@ function parseRulesImage(rulesData, symbolData)
             rewrites = {}, -- left and right sides of the rule
             keywords = {},
             ruleIndex = ruleIndex,
+            command = nil
         }
+
+        if parsingIO then
+            -- add the io keyword
+            finalRule.command = getIOSymbol(ruleIndex)
+            print("   rule " .. ruleIndex .. " has io keyword " .. getIOSymbol(ruleIndex))
+        end
         
         local currentRewrite = {left = nil, right = {}}
         for j, part in ipairs(rule) do
@@ -368,7 +376,6 @@ function parseRulesImage(rulesData, symbolData)
                     height = #currentRewrite.left
                 })
                 currentRewrite = {left = nil, right = {}}
-
             elseif type(part) == "table" then
                 if currentRewrite.left == nil then
                     currentRewrite.left = part
@@ -438,7 +445,8 @@ function parseRulesImage(rulesData, symbolData)
         -- expand the rule using the function. this is finally where the keywords are processed.
 
         --printPatternsSideBySide(currentRule)
-        local newRules = expandRule(currentRule, 1)
+        local originalIndex = i
+        local newRules = expandRule(currentRule, originalIndex)
 
         for _, expandedRule in ipairs(newRules) do
             -- trim ';' from the end if present

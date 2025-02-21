@@ -1,3 +1,5 @@
+local pprint = require('pprint')
+
 -- update board and output image data
 
 -- WIP TODO: fix the heatmap display
@@ -5,6 +7,32 @@
 -- WIP TODO: on mouse input, only check in the area as provided, but allowing any partial overlap.
 -- WIP TODO: on following turns more generally, we can skip checking the whole board and only check the changed cells?
 
+local function setHeat(boardData, x, y, rulesetIndex, ruleIndex)
+    boardData.heatmap[rulesetIndex] = boardData.heatmap[rulesetIndex] or {}
+    boardData.heatmap[rulesetIndex][ruleIndex] = boardData.heatmap[rulesetIndex][ruleIndex] or {}
+    local heatmap = boardData.heatmap[rulesetIndex][ruleIndex]
+    heatmap[y] = heatmap[y] or {}
+    heatmap[y][x] = heatmap[y][x] or 0
+    heatmap[y][x] = heatmap[y][x] + 1
+    --pprint("set heatmap for rule " .. ruleIndex .. " at " .. x .. ", " .. y, heatmap)
+end
+
+local function getHeat(heatmap, x, y)
+    if not heatmap[y] then return 0 end
+    return heatmap[y][x] or 0
+end
+
+local function getHeatmap(boardData, rulesetIndex, ruleIndex)
+    local heatmap = boardData.heatmap or {}
+    if not heatmap[rulesetIndex] or not heatmap[rulesetIndex][ruleIndex] then
+        return {}
+    end
+    --print("found heatmap for rule " .. ruleIndex .. " with" .. #heatmap[rulesetIndex][ruleIndex])
+    --pprint("heatmap for rule " .. ruleIndex, heatmap[rulesetIndex][ruleIndex])
+    return heatmap[rulesetIndex][ruleIndex]
+end
+
+-- todo: also compare to right side. if identical, do not consider the pattern a match.
 local function checkMatch(board, pattern, startX, startY, width, height)
     local endX = startX + width - 1
     local endY = startY + height - 1
@@ -31,56 +59,55 @@ local function checkConditions(rule)
     return true
 end
 
-local function findFirstMatch(board, rewrite, startX, startY, endX, endY, skipToIndex, repeatedRule)
-    -- note: if a repeated rule, we can't check the final cell
+local function findFirstMatch(board, rewrite, bounds, skipToIndex)-- heatmap)
+    local startX, startY, endX, endY = bounds.x1, bounds.y1, bounds.x2, bounds.y2
     local totalChecks = 0
-    local max = (endX - startX + 1) * (endY - startY + 1) - (repeatedRule and 1 or 0)
-    --io.write(skipToIndex, " to ", max, " ")
-
+    local max = (endX - startX + 1) * (endY - startY + 1)
     for i = skipToIndex or 1, max do
         totalChecks = totalChecks + 1
         local x = startX + (i - 1) % (endX - startX + 1)
         local y = startY + math.floor((i - 1) / (endX - startX + 1))
-        local match = checkMatch(board, rewrite.left, x, y, rewrite.width, rewrite.height)
-        if match then
-            return x, y, totalChecks
-        end
+        --local matchedBefore = getHeat(heatmap, x, y) > 0
+        --if not matchedBefore then
+            local match = checkMatch(board, rewrite.left, x, y, rewrite.width, rewrite.height)
+            if match then
+                return x, y, totalChecks
+            end
+        --end
     end
     return nil, nil, totalChecks -- out of bounds, no match
 end
 
 local function applyRewrite(board, rewrite, match)
     local newPattern = rewrite.right[love.math.random(1, #rewrite.right)]
+    local madeChange = false
     for y = 1, rewrite.height do
         for x = 1, rewrite.width do
             if newPattern[y][x] >= 0 then
+                madeChange = board[match.y + y - 1][match.x + x - 1] ~= newPattern[y][x] or madeChange
                 board[match.y + y - 1][match.x + x - 1] = newPattern[y][x]
             end
         end
     end
+    return madeChange
 end
 
-function updateBoardNew(boardData, rules)
-
+local function updateBoard(boardData, rulesets)
     local newBoard = shallowCopy(boardData.table)
     local boardWidth = #newBoard[1]
     local boardHeight = #newBoard
 
     if app.input.totalLoops == 0 then
-        print("   loop start. rewrites per turn:")
         io.write("<> ")
     end
 
-    function recursiveCheck(rules, ruleCount, changedX, changedY, changedX2, changedY2, maxDimensions, depth)
+    function recursiveCheck(rulesetIndex, rules, ruleCount, changedX, changedY, changedX2, changedY2, maxDimensions, depth)
         local depth = depth or 1
         local expandTopLeft = depth > 1
         local expandBottomRight = false -- not implemented yet and usually not necessary
         local totalMatches = 0
         local totalChecks = 0
-    
-        --print("")
-        --io.write(string.rep(" ", depth * 3), "check ", ruleCount, " rules for (", changedX, ",", changedY, ") to (", changedX2, ",", changedY2, ") ")
-    
+
         for r = 1, ruleCount do -- apply rules until rule n.
             local rule = rules[r]
             local expectedMatches = #rule.rewrites -- if each rewrite in the rule has a match, we can apply them all.
@@ -88,16 +115,12 @@ function updateBoardNew(boardData, rules)
                 print("error: rule " .. r .. " has no rewrites.")
                 return nil, nil
             end
-    
             -- walk through the board, moving windows the size of the rewrites.
             -- every time all can find new matches, apply them and recurse, then continue.
-            --print("")
-            --io.write(string.rep(" ", depth * 3),"r ", r,  "? ")
             local windows = {} -- current subgrid index each rewrite has searched
             local bounds  = {} -- boundaries the index can move within
             local searching = checkConditions(rule) -- end if no more matches can be found for any rewrite
             while searching do
-                
                 local collectedMatches = {}
                 for re, rewrite in ipairs(rule.rewrites) do
                     -- expand area to search by the dimensions of the rewrite - 1, but always keep within maxDimensions.
@@ -109,14 +132,13 @@ function updateBoardNew(boardData, rules)
                     }
                     windows[re] = windows[re] or 1 -- last match index
                     local b = bounds[re]
-                    --o.write("search in bounds (", b.x1, ",", b.y1, " to ", b.x2, ",", b.y2, ") ")
                     if b.x1 > b.x2 or b.y1 > b.y2 then
                         searching = false
                         break
                     end
-                    local repeatedRule = depth > 1 and r == ruleCount
-                    --if re > 1 then io.write("->", re, "? ") end--" (", b.x1, ", ", b.y1, " to ", b.x2, ", ", b.y2, ") >= ", windows[re], "? ")
-                    local foundX, foundY, checks = findFirstMatch(newBoard, rewrite, b.x1, b.y1, b.x2, b.y2, windows[re], repeatedRule)
+                    --local repeatedRule = depth > 1 and r == ruleCount
+                    --local heatmap = getHeatmap(boardData, rulesetIndex, r)
+                    local foundX, foundY, checks = findFirstMatch(newBoard, rewrite, b, windows[re]) --heatmap)
                     totalChecks = totalChecks + checks
                     if foundX then
                         local rows = b.y2 - b.y1 + 1
@@ -133,18 +155,26 @@ function updateBoardNew(boardData, rules)
                 if #collectedMatches == expectedMatches then
                     for m, match in ipairs(collectedMatches) do
                         local rewrite = rule.rewrites[m]
-                        applyRewrite(newBoard, rewrite, match)
-                        local matches, checks = recursiveCheck(
-                            rules, r, 
-                            match.x, match.y,
-                            match.x + rewrite.width - 1, match.y + rewrite.height - 1, 
-                            maxDimensions,
-                            depth + 1
-                        )
-                        -- after recursion
-                        --io.write(string.rep(" ", depth * 3),"--",r,"? ")
-                        totalMatches = totalMatches + matches + 1
-                        totalChecks = totalChecks + checks
+                        -- make sure the pattern is even different from the original while trying to apply it
+                        local madeChange = applyRewrite(newBoard, rewrite, match)
+                        if depth > 128 then
+                            io.write("max depth. ")
+                        elseif madeChange then
+                            --if boardData.heatmap then setHeat(boardData, match.x, match.y, rulesetIndex, r) end
+                            local matches, checks = recursiveCheck(
+                                rulesetIndex, rules, r, 
+                                match.x, match.y,
+                                match.x + rewrite.width - 1, match.y + rewrite.height - 1, 
+                                maxDimensions,
+                                depth + 1
+                            )
+                            -- after recursion
+                            totalMatches = totalMatches + matches + 1
+                            totalChecks = totalChecks + checks
+                        else 
+                            --io.write("no change. ")
+                            --return totalMatches, totalChecks
+                        end
                     end
                 else
                     --io.write("no match. ")
@@ -152,28 +182,54 @@ function updateBoardNew(boardData, rules)
                 end
             end
         end
-        --print("")
         depth = depth - 1
-        --print(string.rep(" ", depth * 3).."   end")
         return totalMatches, totalChecks
     end
 
     local maxDimensions = {x1 = 1, y1 = 1, x2 = boardWidth, y2 = boardHeight}
-    --local checkDimensions = {x1 = 1, y1 = 1, x2 = boardWidth, y2 = boardHeight}
 
     -- start at depth 1, which considers the dimensions as absolute.
     -- inner levels cover the area that each rewrite shares with the dimensions.
-    local matches, checks = recursiveCheck(rules, #rules, 1, 1, boardWidth, boardHeight, maxDimensions, 1)
+    local matches, checks = 0, 0
+    for setI, rules in ipairs(rulesets) do
+        newMatches, newChecks = recursiveCheck(setI, rules, #rules, 1, 1, boardWidth, boardHeight, maxDimensions, 1)
+        io.write(newMatches, "/", newChecks, " ")
+        matches = matches + newMatches
+        checks = checks + newChecks
+    end
 
+    --pprint(boardData.heatmap)
 
     -- update the board
     boardData.table = newBoard
-
-    io.write(matches, "/", checks, " ")
     return matches, checks - matches
 end
 
+function applyCommandToBoard(boardData, rules, ioRules, command)
+    -- if #ioRules == 0 then
+    --     print("no io rules")
+    --     return 0, 0
+    -- end
+    
+    local rulesets = {{}, rules}
 
+    -- find all rules that match the command
+    for i, rule in ipairs(ioRules) do
+        if rule.command == command then
+            table.insert(rulesets[1], rule)
+        end
+    end
+
+    if #rulesets[1] == 0 then
+        return 0, 0
+    end
+    print()
+    print("applying command " .. command .. " with " .. #rulesets[1] .. " rules")
+    print("then applying " .. #rules .. " rules")
+
+    local matches, misses = updateBoard(boardData, rulesets)
+    return matches, misses
+end
 
 
 -- use the board table to update the image data

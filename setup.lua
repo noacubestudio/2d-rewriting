@@ -46,11 +46,11 @@ function loadLatestFile(filename, data, destinationKey, notFoundMessage)
 end
 
 function loadImages(data)
-    -- symbols
-    local changed = loadLatestFile('symbols.png', data, "symbols", 
-        "The PNG is required to generate the builtin symbols.")
+    -- macros
+    local changed = loadLatestFile('macros.png', data, "macros", 
+        "The PNG is required to generate the builtin macros.")
     if changed then 
-        data.symbols.table = parseSymbolsImage(data.symbols.imagedata)
+        data.macros.table = parseMacrosImage(data.macros.imagedata)
         restartLoop()
     end
 
@@ -71,18 +71,15 @@ function loadImages(data)
         "The PNG is required to generate the rewrite rules.")
     if changed then 
         -- parse rules
-        -- symbols table contains keys
-        local symbolCount = 0
-        for key, value in pairs(data.symbols.table) do
-            symbolCount = symbolCount + 1
-        end
-        if symbolCount == 0 then
-            print("no symbols loaded yet, can't parse rules.")
-            app.error = true
-            return
-        end
+        data.rules.table = parseRulesImage(data.rules, data.macros.table)
+        restartLoop()
+    end
 
-        data.rules.table = parseRulesImage(data.rules, data.symbols.table)
+    -- io rules
+    changed = loadLatestFile('io.png', data, "ioRules", 
+        "The PNG is required to generate the IO rules.")
+    if changed then
+        data.ioRules.table = parseRulesImage(data.ioRules)
         restartLoop()
     end
 end
@@ -96,6 +93,9 @@ function setupOutput(data)
         data.output.imagedata = data.board.imagedata:clone()
         data.board.table = parseBoardImage(data.output.imagedata)
         updateImagedata(data.output.imagedata, data.board)
+
+        -- run init rules
+        local hits, misses = applyCommandToBoard(data.board, data.rules.table, data.ioRules.table, "load")
 
         -- start looping
         app.idle = false

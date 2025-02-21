@@ -80,8 +80,15 @@ local data = {
         width = 0,
         height = 0,
     },
-    symbols = {
-        table = {}, -- the special symbols
+    ioRules = {
+        table = {}, -- the special io rules
+        imagedata = nil,
+        imageHash = 0,
+        width = 0,
+        height = 0,
+    },
+    macros = {
+        table = {}, -- the special macro symbols
         imagedata = nil,
         imageHash = 0,
         width = 0,
@@ -132,7 +139,6 @@ function restartLoop()
 end
 
 function love.update(dt)
-
     -- update every <settings.updateInterval> seconds
     local updateNow = false
     app.timeSinceLastUpdate = app.timeSinceLastUpdate + dt
@@ -165,8 +171,7 @@ function love.update(dt)
     if updateNow then
         -- new state, apply rules once
         local boardData = app.editing and data.previewBoard or data.board
-        --local madeChanges, hits, misses = updateBoard(boardData, data.rules.table)
-        local hits, misses = updateBoardNew(boardData, data.rules.table)
+        local hits, misses = applyCommandToBoard(boardData, data.rules.table, data.ioRules.table, "loop")
 
         -- reset after last update
         app.stepByStep = false
@@ -306,7 +311,7 @@ function love.keypressed(key, scancode, isrepeat)
         end
     
     elseif key == "l" then
-        -- reload symbols, board and rules
+        -- reload all images
         loadImages(data)
     
     elseif key == "s" then
@@ -367,6 +372,8 @@ function love.keypressed(key, scancode, isrepeat)
             restartLoop()
             app.timeSinceLastUpdate = 0
         end
+
+        local hits, misses = applyCommandToBoard(data.board, data.rules.table, data.ioRules.table, key)
 
     elseif key == "1" or key == "2" then
         -- show different heatmaps over the state that represent where each rule matched since last input
@@ -524,7 +531,7 @@ function printPatternsSideBySide(tables)
         end
     end
 
-    for y = 1, tallestSize do -- for each row, print row of the symbols side by side
+    for y = 1, tallestSize do -- for each row, print row of the chars side by side
         io.write("   ")
         for _, symbol in ipairs(tables) do -- each symbol
             if type(symbol) == "string" then
@@ -554,7 +561,7 @@ function printPatternsSideBySide(tables)
                     end
                 end
             end
-            io.write("  ") -- space between symbols
+            io.write("  ") -- space between chars
         end
         print()
     end
